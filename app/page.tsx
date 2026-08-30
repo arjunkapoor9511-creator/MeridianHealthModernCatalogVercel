@@ -1,60 +1,28 @@
-// Landing page: renders the raw Azure products JSON for the signed-in user's
-// insurance cohort, nothing else.
+// Product catalog page.
 //
-// The insurance provider is NOT hard-coded any more. proxy.ts verifies the
-// mm_session cookie and injects `x-user-insurance` as a request header; we read
-// it here. Modern Mark -> "unitedhealthcare", Legacy Luke -> "humana".
-//
-// Caching: `await headers()` is a request-time API, so this page renders
-// dynamically (per request). The fetch() below has its own Data Cache keyed by
-// full URL, so `?insurance=unitedhealthcare` and `?insurance=humana` each get an
-// independent 5-minute entry - the Azure call stays cheap.
+// Rendering (Cache Components / PPR):
+//   - Static shell (prerendered): the "Meridian Health" header, the basket
+//     button, and <CatalogShellSkeleton/> (filter rail + sort + grid skeletons).
+//   - <Catalog/> streams in as soon as proxy.ts's identity headers are read
+//     (no async work) -> member bar + real filter rail + sort control.
+//   - <ProductResults/> (a cached fetch, see lib/products.ts) streams into the
+//     grid behind its own Suspense boundary.
 
-import { headers } from "next/headers";
+import { Suspense } from "react";
 
-export default async function Home() {
-  const insurance = (await headers()).get("x-user-insurance");
+import { SiteHeader } from "@/components/site-header";
+import { Catalog } from "@/components/catalog/catalog";
+import { CatalogShellSkeleton } from "@/components/catalog/catalog-shell-skeleton";
 
-  // Shouldn't happen in normal flow - proxy.ts redirects unauthenticated
-  // requests before they reach here. This is a friendly fallback, not a 500.
-  if (insurance !== "unitedhealthcare" && insurance !== "humana") {
-    return (
-      <div className="p-4 font-mono text-sm">
-        <p>No session. Open the catalog from the MeridianHealth storefront.</p>
-        {process.env.MARKETPLACE_ENTRY_URL ? (
-          <p>
-            <a
-              className="underline"
-              href={process.env.MARKETPLACE_ENTRY_URL}
-            >
-              Go to the storefront
-            </a>
-          </p>
-        ) : null}
-      </div>
-    );
-  }
-
-  const res = await fetch(
-    `${process.env.AZURE_PRODUCTS_URL}?insurance=${insurance}`,
-    {
-      headers: { "x-functions-key": process.env.AZURE_PRODUCTS_KEY! },
-      // fetch is not cached by default in Next.js 16 - cache for 5 minutes.
-      next: { revalidate: 300 },
-    },
-  );
-
-  if (!res.ok) {
-    throw new Error(
-      `Products request failed: ${res.status} ${await res.text()}`,
-    );
-  }
-
-  const data = await res.json();
-
+export default function Page() {
   return (
-    <pre className="overflow-x-auto p-4 font-mono text-sm leading-relaxed">
-      {JSON.stringify(data, null, 2)}
-    </pre>
+    <div className="min-h-full">
+      <SiteHeader />
+      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6">
+        <Suspense fallback={<CatalogShellSkeleton />}>
+          <Catalog />
+        </Suspense>
+      </main>
+    </div>
   );
 }
