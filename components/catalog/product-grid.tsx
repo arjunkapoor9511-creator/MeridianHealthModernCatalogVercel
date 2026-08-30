@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { useCatalog } from "@/components/catalog/catalog-store";
 import { ProductCard } from "@/components/catalog/product-card";
 import { CATALOG_GRID_CLASS } from "@/components/catalog/product-grid-skeleton";
+import { ProductDetailDialog } from "@/components/product-detail/product-detail-dialog";
 import {
   filterProducts,
   isFilterActive,
@@ -15,6 +16,7 @@ import {
 
 export function ProductGrid({ products }: { products: Product[] }) {
   const { filters, sort, clear } = useCatalog();
+  const [selected, setSelected] = useState<Product | null>(null);
 
   const visible = useMemo(
     () => sortProducts(filterProducts(products, filters), sort),
@@ -44,10 +46,20 @@ export function ProductGrid({ products }: { products: Product[] }) {
       ) : (
         <div className={CATALOG_GRID_CLASS}>
           {visible.map((product, i) => (
-            <ProductCard key={product.id} product={product} priority={i < 4} />
+            <ProductCard
+              key={product.id}
+              product={product}
+              priority={i < 4}
+              onOpen={() => setSelected(product)}
+            />
           ))}
         </div>
       )}
+
+      <ProductDetailDialog
+        product={selected}
+        onClose={() => setSelected(null)}
+      />
     </div>
   );
 }

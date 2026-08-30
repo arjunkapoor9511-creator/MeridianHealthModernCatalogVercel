@@ -261,3 +261,144 @@ export const INSURANCE_LABELS: Record<Insurance, string> = {
   unitedhealthcare: "UnitedHealthcare",
   humana: "Humana",
 };
+
+// --- Product detail ------------------------------------------------------
+// The `productdetail` API returns the richer per-SKU record the popup needs.
+// Its payload is camelCase (unlike the PascalCase list API) and split into a
+// `product` summary (fields we mostly already have on `Product`) and a `detail`
+// block (description, features, an arbitrary `specs` bag, a gallery, files).
+
+/** Raw shape of `GET /api/productdetail?sku=...`. Only the fields we read. */
+export interface ProductDetailResponse {
+  product: {
+    sku: string;
+    slug: string;
+    name: string;
+  };
+  detail: {
+    shortDescription: string | null;
+    description: string | null;
+    warranty: string | null;
+    specs: Record<string, string | number | null> | null;
+    features: string[] | null;
+    images:
+      | {
+          url: string;
+          alt: string | null;
+          sortOrder: number;
+          width: number;
+          height: number;
+        }[]
+      | null;
+    files: { label: string; url: string; sizeBytes: number }[] | null;
+    sourceUrl: string | null;
+  };
+}
+
+export interface ProductImage {
+  url: string;
+  alt: string;
+  width: number;
+  height: number;
+}
+
+export interface ProductFile {
+  label: string;
+  url: string;
+  sizeBytes: number;
+}
+
+export interface ProductSpec {
+  label: string;
+  value: string;
+}
+
+/** Normalised detail record (camelCase, gallery sorted, specs flattened). */
+export interface ProductDetail {
+  sku: string;
+  slug: string;
+  description: string | null;
+  warranty: string | null;
+  features: string[];
+  specs: ProductSpec[];
+  images: ProductImage[];
+  files: ProductFile[];
+}
+
+// Trailing unit tokens on spec keys, longest first (so `Kmh` beats `Km`).
+const SPEC_UNIT_SUFFIXES: readonly [string, string][] = [
+  ["Kmh", "km/h"],
+  ["Mm", "mm"],
+  ["Cm", "cm"],
+  ["Km", "km"],
+  ["Kg", "kg"],
+];
+
+/**
+ * Turn a camelCase spec key into a human label, lifting a trailing unit token
+ * into parentheses: `overallLengthMm` -> "Overall length (mm)",
+ * `maxSpeedKmh` -> "Max speed (km/h)", `batteryType` -> "Battery type".
+ */
+export function formatSpecLabel(key: string): string {
+  let base = key;
+  let unit = "";
+  for (const [suffix, label] of SPEC_UNIT_SUFFIXES) {
+    if (base.length > suffix.length && base.endsWith(suffix)) {
+      base = base.slice(0, -suffix.length);
+      unit = label;
+      break;
+    }
+  }
+  const words = base
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .trim();
+  const sentence = words.charAt(0).toUpperCase() + words.slice(1);
+  return unit ? `${sentence} (${unit})` : sentence;
+}
+
+/** Bytes -> a short human size, e.g. `1806226` -> "1.7 MB". */
+export function formatFileSize(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "";
+  const units = ["B", "KB", "MB", "GB"];
+  const i = Math.min(
+    Math.floor(Math.log(bytes) / Math.log(1024)),
+    units.length - 1,
+  );
+  const value = bytes / 1024 ** i;
+  const digits = i === 0 || value >= 10 ? 0 : 1;
+  return `${value.toFixed(digits)} ${units[i]}`;
+}
+
+export function mapProductDetail(raw: ProductDetailResponse): ProductDetail {
+  const { product, detail } = raw;
+
+  const images: ProductImage[] = [...(detail.images ?? [])]
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((img) => ({
+      url: img.url,
+      alt: img.alt?.trim() || product.name,
+      width: img.width || 1000,
+      height: img.height || 1000,
+    }));
+
+  const specs: ProductSpec[] = Object.entries(detail.specs ?? {})
+    .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== "")
+    .map(([key, v]) => ({ label: formatSpecLabel(key), value: String(v) }));
+
+  return {
+    sku: product.sku,
+    slug: product.slug,
+    description:
+      detail.description?.trim() || detail.shortDescription?.trim() || null,
+    warranty: detail.warranty?.trim() || null,
+    features: (detail.features ?? []).filter((f) => f && f.trim().length > 0),
+    specs,
+    images,
+    files: (detail.files ?? []).map((f) => ({
+      label: f.label,
+      url: f.url,
+      sizeBytes: f.sizeBytes,
+    })),
+  };
+}

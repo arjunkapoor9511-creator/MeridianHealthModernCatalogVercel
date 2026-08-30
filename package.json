@@ -12,6 +12,7 @@
     "@vercel/global-config": "^1.5.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "embla-carousel-react": "^8.6.0",
     "jose": "^6.1.0",
     "lucide-react": "^1.33.0",
     "next": "16.2.4",

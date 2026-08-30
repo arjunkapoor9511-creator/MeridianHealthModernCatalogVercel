@@ -16,19 +16,30 @@ export const CARD_IMAGE_SIZES =
 export function ProductCard({
   product,
   priority = false,
+  onOpen,
 }: {
   product: Product;
   priority?: boolean;
+  /** Open the product detail popup. */
+  onOpen: () => void;
 }) {
   const { add } = useCart();
 
   const onSale =
     product.compareAtPrice != null && product.compareAtPrice > product.price;
 
-  // The card body is intentionally inert - clicking a product does nothing yet.
+  // The image and the title open the detail popup. They are separate buttons
+  // (not one wrapping the whole card) so the "Add to cart" button below is not
+  // nested inside another button.
   return (
     <article className="group flex flex-col overflow-hidden rounded-lg border bg-card">
-      <div className="relative aspect-square bg-white">
+      <button
+        type="button"
+        onClick={onOpen}
+        aria-haspopup="dialog"
+        aria-label={`View details for ${product.name}`}
+        className="relative aspect-square cursor-pointer bg-white outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      >
         <Image
           src={product.imageUrl}
           alt={product.imageAlt}
@@ -36,21 +47,28 @@ export function ProductCard({
           sizes={CARD_IMAGE_SIZES}
           priority={priority}
           loading={priority ? undefined : "lazy"}
-          className="object-contain p-4"
+          className="object-contain p-4 transition-transform group-hover:scale-[1.02]"
         />
         {onSale && (
           <Badge className="absolute top-2 left-2" variant="destructive">
             Sale
           </Badge>
         )}
-      </div>
+      </button>
 
       <div className="flex flex-1 flex-col gap-1.5 p-4">
         <p className="text-[0.7rem] font-medium tracking-wide text-muted-foreground uppercase">
           {product.brand}
         </p>
-        <h3 className="line-clamp-2 min-h-[2.5rem] text-sm leading-snug font-medium">
-          {product.name}
+        <h3 className="min-h-[2.5rem] text-sm leading-snug font-medium">
+          <button
+            type="button"
+            onClick={onOpen}
+            aria-haspopup="dialog"
+            className="line-clamp-2 cursor-pointer text-left outline-none hover:underline focus-visible:underline"
+          >
+            {product.name}
+          </button>
         </h3>
 
         <div className="flex items-baseline gap-2">

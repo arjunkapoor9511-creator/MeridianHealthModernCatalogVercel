@@ -5,6 +5,87 @@ states the context, the decision, and the trade-offs accepted.
 
 ---
 
+## 2026-08-30 — Product detail popup: client Dialog over a cached API route, not an intercepting route
+
+**Status:** Accepted
+
+### Context
+
+Clicking a product card was a documented no-op. It should open a popup with the
+full per-SKU record from the Azure `productdetail` API — image carousel,
+description, features, an arbitrary `specs` bag, warranty, and the flyer /
+manual PDFs — plus add-to-cart. Requirements echoed the catalog: shell paints
+first, the rest streams in; reuse data we already have (price / name / brand);
+cache the images (square, rarely change); PDFs open in a new browser tab.
+
+The catalog page gets true PPR because it is a route with a server-render
+entry point. A popup is opened by a client interaction — there is no server
+render to partially prerender. Two ways to still get "server shell + streamed
+data":
+
+- **A.** Parallel + intercepting routes (`@modal` slot, `(.)product/[sku]`,
+  a full `/product/[sku]` page, `not-found`/`error` boundaries).
+- **B.** A client `Dialog` whose shell is built from the `Product` already in
+  the grid's memory, filling the blanks from a cached API route.
+
+### Decision
+
+Option B.
+
+- **`components/product-detail/product-detail-dialog.tsx`** renders the shell
+  (brand, name, price, hero image, quantity + add-to-cart) synchronously from
+  the `Product` the grid passes in — no fetch, no spinner for that part.
+- **`useProductDetail(sku)`** fetches `/api/product-detail/[sku]` when the
+  popup opens, showing dimension-matched skeletons
+  (`product-detail-skeleton.tsx`) until it resolves, then the gallery
+  (`shadcn/ui carousel` + `embla-carousel-react`), description, features,
+  specs, warranty and documents. A module-level `Map` makes reopening the
+  same product instant; the request aborts if the popup closes first.
+- **`app/api/product-detail/[sku]/route.ts`** verifies `mm_session` itself
+  (`/api/*` is outside `proxy.ts`), then calls **`getProductDetail(sku)` in
+  `lib/products.ts`** — a `use cache` function
+  (`cacheLife({ stale: 300, revalidate: 3600, expire: 86400 })`,
+  `cacheTag('product:<sku>')`) mirroring `getProducts`. The Azure host + key
+  are the same function app as the list API (`AZURE_PRODUCT_DETAIL_URL` +
+  reused `AZURE_PRODUCTS_KEY`, sent as `x-functions-key`). The response also
+  carries `Cache-Control: public, s-maxage=3600, stale-while-revalidate=86400`
+  for the CDN. Unknown SKU → upstream 404 → `null` → route 404 → the popup
+  keeps its shell and shows a short "details unavailable" line.
+- **Gallery:** `next/image` in fixed `aspect-square` boxes, `object-contain`
+  on white, `sizes` tuned to the dialog column, first slide `priority`.
+  `next.config.ts` already whitelists the blob host and holds optimised
+  derivatives 30 days — no config change.
+- **Cards:** the image and the title become buttons that open the popup
+  (kept separate so the existing "Add to cart" button is not nested inside
+  another button).
+- **Files:** plain `<a target="_blank" rel="noopener noreferrer">` — the
+  browser opens the PDF in a new tab; no download attribute.
+
+### Consequences
+
+- The popup's shell is client-rendered, not a prerendered PPR shell — a
+  deliberate deviation from the catalog page. In practice it still paints
+  instantly (the data is already in memory) and the "blanks" stream, which is
+  the property that mattered.
+- No shareable `/product/[sku]` URL, no browser-history entry for an open
+  popup, no full-page view. Reversal to option A is additive and does not
+  disturb `lib/products.ts`, the API route, or the detail components.
+- New `/api/*` route must verify the session by hand; `proxy.ts` does not
+  cover it (same as `demo-login`).
+- `specs` keys are humanised heuristically (`formatSpecLabel` — trailing unit
+  token → parentheses); an unrecognised unit suffix just stays part of the
+  label text.
+- `AZURE_PRODUCT_DETAIL_URL` must be added to the Vercel project
+  (Development / Preview / Production) before deploy.
+
+### Related
+
+- Working design doc: `product-detail-plan.md` (gitignored).
+- Builds on the entry below — reuses its `Product` shape, `use cache` +
+  `cacheTag` convention, `next/image` config, and the `mm_session` contract.
+
+---
+
 ## 2026-08-29 — Catalog page: PPR via Cache Components; client-side filter/sort over a cached fetch
 
 **Status:** Accepted
