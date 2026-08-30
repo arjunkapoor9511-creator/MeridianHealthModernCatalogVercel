@@ -5,6 +5,58 @@ states the context, the decision, and the trade-offs accepted.
 
 ---
 
+## 2026-08-29 — Cohort routing table in Global Config, read directly (not via the Flags SDK)
+
+**Status:** Accepted
+
+### Context
+
+`proxy.ts` decides modern-vs-legacy per insurance cohort. That list was a
+hard-coded array — changing it needed an edit + `git push` + a Vercel build
+(minutes; the build can fail). We need to flip a cohort and, more importantly,
+**roll back instantly** when errors climb.
+
+### Decision
+
+Move the routing table into **Vercel Global Config** (formerly Edge Config;
+package `@vercel/global-config`, connection string `GLOBAL_CONFIG`) and read it
+directly from `proxy.ts` via `lib/routing.ts`.
+
+- Reads are sub-millisecond and in-region — no latency cost in the proxy.
+- Edits (in the Vercel dashboard → Storage → Global Config → Items) propagate
+  globally in seconds with **no redeploy and no build**. That is the
+  instant-rollback property. `scripts/cohort.mjs` is a read-only inspector that
+  prints current state and the exact edit to make.
+- Config shape: `migratedCohorts` (string[]), `cohortOverrides`
+  (`{ [sub]: "modern" | "legacy" }`, wins over the cohort rule — canary/exclude a
+  single member), `killSwitch` (bool — everyone to legacy).
+- `lib/routing.ts` falls back to `DEFAULT_MIGRATED = ["unitedhealthcare"]` if
+  Global Config is unset, unreachable, or malformed — a config outage can never
+  route a cohort somewhere untested.
+- `proxy.ts` logs one structured line per request (`{at,sub,insurance,destination}`)
+  so a spike can be correlated with the cohort during a cutover.
+
+**Not** the Vercel Flags SDK (`flags`). It is an abstraction over a backing store
+(which would still be Global Config), and its main value-add — consistent
+percentage bucketing for experiments — buys nothing for an all-or-nothing
+per-cohort migration decided in middleware. Revisit if we want *gradual* rollout
+(10% → 50% → 100% of a cohort, bucketed by `sub`) or Vercel Toolbar per-browser
+overrides; the Flags SDK would layer on top of the same Global Config without
+changing the rollback path.
+
+### Consequences
+
+- New runtime dependency on Global Config availability in the proxy; mitigated by
+  the code fallback.
+- The routing table is operational state that lives outside git — its current
+  value is not visible in the repo. `node scripts/cohort.mjs` prints it.
+- Cutover/rollback is a manual dashboard edit. Scripting it would need a
+  team-scoped Vercel API token (the project token `vcp_…` and the read-only
+  connection-string token can't write Global Config items); deferred.
+- Global Config change propagation is "seconds", not truly instantaneous.
+
+---
+
 ## 2026-08-29 — Demo auth handoff: signed session cookie + `proxy.ts`, not a token in the URL
 
 **Status:** Accepted (demo scaffolding)

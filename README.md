@@ -26,11 +26,12 @@ AZURE_PRODUCTS_KEY=<function-key>
 SESSION_SECRET=<32+ char random>          # node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 MARKETPLACE_ENTRY_URL=<storefront URL>    # where MeridianHealth/site/index.html is served
 LEGACY_ORIGIN=<legacy marketplace URL>   # not-yet-migrated cohorts are rewritten here
+GLOBAL_CONFIG=<connection string>        # `vercel env pull` after connecting the Global Config store
 ```
 
-`.env.local` is gitignored. All five variables must also be set in the Vercel
-project for the Development, Preview, and Production environments
-(`vercel env add ...`), otherwise builds and requests fail.
+`.env.local` is gitignored. All of these must also be set in the Vercel project
+for the Development, Preview, and Production environments (`vercel env add ...`) —
+`GLOBAL_CONFIG` is injected automatically when you connect the store.
 
 ## Develop
 
@@ -76,7 +77,7 @@ storefront "Sign in as Modern Mark / Legacy Luke"
   → GET /api/demo-login?persona=<modern-mark|legacy-luke>
       → maps persona → identity (inline map; stands in for an eligibility service)
       → mints a signed JWT, sets the `mm_session` cookie, 302 → /
-  → proxy.ts verifies the cookie on every page request, then routes by cohort:
+  → proxy.ts verifies the cookie, then routes by cohort (table in Global Config):
       → no/invalid session          → 302 to MARKETPLACE_ENTRY_URL (storefront)
       → migrated cohort (united)    → this app; injects verified x-user-* headers
       → not-yet-migrated (humana)   → transparent rewrite to LEGACY_ORIGIN
@@ -88,10 +89,8 @@ storefront "Sign in as Modern Mark / Legacy Luke"
 | `modern-mark` | `UHC-44107` | `unitedhealthcare` | this app (26 products) |
 | `legacy-luke` | `HUM-20938` | `humana` | legacy marketplace (rewrite; URL stays on this domain) |
 
-Which cohorts are "migrated" is the `MIGRATED` array in [proxy.ts](proxy.ts) —
-hard-coded for the demo; production would read it from Edge Config so cohorts flip
-without a redeploy. Session details, the prod-hardening path, and the design
-rationale are in [lib/session.ts](lib/session.ts) and [DECISIONS.md](DECISIONS.md).
+Session details, the prod-hardening path, and the design rationale are in
+[lib/session.ts](lib/session.ts) and [DECISIONS.md](DECISIONS.md).
 
 Quick check:
 
@@ -102,10 +101,48 @@ curl -i "http://localhost:3000/"                                     # 302 → M
 # with a legacy-luke cookie: GET / returns 200 + header x-middleware-rewrite: <LEGACY_ORIGIN>
 ```
 
+### Cohort switch (cut over / roll back)
+
+The modern-vs-legacy routing table lives in **Vercel Global Config**, read by
+[lib/routing.ts](lib/routing.ts). Editing it takes effect globally in seconds —
+**no redeploy, no build**. If Global Config is unreadable, routing falls back to
+`DEFAULT_MIGRATED = ["unitedhealthcare"]`.
+
+| Global Config key | Meaning |
+| ----------------- | ------- |
+| `migratedCohorts` | `string[]` of insurances served by this app |
+| `cohortOverrides` | `{ [sub]: "modern" \| "legacy" }` — one member; wins over the cohort rule |
+| `killSwitch`      | `true` → every signed-in user goes to legacy |
+
+**Inspect** current state (read-only, no token):
+
+```bash
+node scripts/cohort.mjs            # prints the table + effective routing per cohort
+```
+
+**Edit** in the Vercel dashboard → **Storage → Global Config → Items**:
+
+| Action | Set |
+| ------ | --- |
+| Cut Humana over | `migratedCohorts` = `["unitedhealthcare", "humana"]` |
+| Roll back | `migratedCohorts` = `["unitedhealthcare"]` |
+| Canary one member first | `cohortOverrides` = `{ "HUM-20938": "modern" }` |
+| Panic (everyone → legacy) | `killSwitch` = `true` (set `false` to undo) |
+
+**Cutover runbook**
+
+1. Set `cohortOverrides` = `{ "HUM-20938": "modern" }`. Sign in as Legacy Luke,
+   confirm the modern app works end to end for that one member.
+2. Set `migratedCohorts` = `["unitedhealthcare", "humana"]`. Watch the proxy logs
+   (`{"at":"proxy",...,"destination":...}`) and error rate for ~10–15 min.
+3. Trouble → set `migratedCohorts` back to `["unitedhealthcare"]` (or
+   `killSwitch` = `true`). Back on legacy within seconds.
+4. Fine → remove the `HUM-20938` entry from `cohortOverrides`.
+
 ## Project structure
 
 ```
-proxy.ts         Session gate + verified-identity header injection (runs before every page)
+proxy.ts         Session gate + cohort routing (runs before every page)
 app/
   layout.tsx     Root layout (html/body, fonts, metadata)
   page.tsx       Landing page — renders the products JSON for the session's insurance
@@ -114,6 +151,9 @@ app/
     demo-login/  GET route: persona → session cookie → redirect
 lib/
   session.ts     Sign / verify the demo session JWT
+  routing.ts     modern-vs-legacy decision, backed by Global Config
+scripts/
+  cohort.mjs     Cut a cohort over / roll back (edits Global Config, no redeploy)
 public/          Static assets
 ```
 
