@@ -1,9 +1,9 @@
 // ---------------------------------------------------------------------------
 // Scope gate for the catalog chatbot
 // ---------------------------------------------------------------------------
-// The bot does exactly two things: answer questions about a specific product,
-// and recommend products for a stated need. Everything else is deflected with a
-// fixed line.
+// The bot answers questions about specific catalog products, recommends
+// products for a stated need, and handles purchase intent for products already
+// discussed. Everything else is deflected with a fixed line.
 //
 // Two layers enforce this:
 //   1. classifyScope() below — a cheap, fast first pass (haiku) on the latest
@@ -23,10 +23,10 @@ export const SCOPE_MODEL =
 
 const SUPPORT_FALLBACK = "1-800-MERIDIAN";
 
-/** The exact line the bot must return for anything out of scope. */
+/** The line the bot returns for anything out of scope. */
 export function outOfScopeMessage(): string {
   const contact = process.env.CHAT_SUPPORT_CONTACT?.trim() || SUPPORT_FALLBACK;
-  return `This query is currently out of scope, please contact support on ${contact}`;
+  return `I currently can't address this query, but you may be able to get support through ${contact}.`;
 }
 
 export const SCOPE_VALUES = [
@@ -36,12 +36,12 @@ export const SCOPE_VALUES = [
 ] as const;
 export type ScopeLabel = (typeof SCOPE_VALUES)[number];
 
-const CLASSIFIER_PROMPT = `You are a strict scope classifier for a health-insurance product catalog assistant.
-The assistant ONLY:
-- "product_question": answers a question about a specific catalog product (specs, dimensions, warranty, features, price, availability).
-- "recommendation": suggests catalog products that fit a stated need or situation.
-Everything else is "out_of_scope": greetings-only, small talk, medical or clinical advice, orders / delivery / returns / billing / account issues, coverage or eligibility questions, anything not about choosing or understanding a mobility/care product.
-Classify the LAST user message, using earlier turns only for context. Respond with one label.`;
+const CLASSIFIER_PROMPT = `You are a scope classifier for a health-insurance mobility/care product catalog assistant.
+Labels:
+- "product_question": a question about a specific catalog product (specs, dimensions, warranty, features, price, whether it's covered).
+- "recommendation": asking for a product suggestion for a stated need OR a follow-up in an ongoing product conversation — including short affirmations and purchase intent about products already discussed ("fantastic", "I'll take it", "I want to buy it", "add it", "why?", "which one"). When earlier turns are about catalog products, lean towards "recommendation" for brief replies.
+- "out_of_scope": greetings with no request, small talk, medical or clinical advice, delivery / returns / billing / account issues, questions about insurance coverage or eligibility for things OTHER than these products (e.g. medications, doctor visits), anything not about choosing, understanding, or acquiring a product from this catalog.
+Classify the LAST user message, using earlier turns for context. Respond with one label.`;
 
 /**
  * Classify the latest user turn. Fails open to "recommendation" (the safer

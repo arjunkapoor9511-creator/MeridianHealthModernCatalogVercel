@@ -20,59 +20,60 @@ export function ChatWidget() {
   const [open, setOpen] = useState(false);
   const [expanded, setExpanded] = useState(false);
 
-  return (
-    <div className="fixed right-4 bottom-4 z-50 flex flex-col items-end gap-3">
-      {open && (
-        <div
-          className={cn(
-            "flex flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl",
-            expanded
-              ? "h-[calc(100dvh-6rem)] w-[min(72rem,calc(100vw-2rem))]"
-              : "h-[32rem] max-h-[calc(100dvh-6rem)] w-[min(24rem,calc(100vw-2rem))]",
-          )}
-        >
-          <div className="flex items-center justify-between border-b px-4 py-3">
-            <div>
-              <p className="text-sm font-semibold">Catalog assistant</p>
-              <p className="text-xs text-muted-foreground">
-                Product questions &amp; recommendations
-              </p>
-            </div>
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => setExpanded((v) => !v)}
-                aria-label={expanded ? "Shrink assistant" : "Expand assistant"}
-              >
-                {expanded ? <Minimize2 /> : <Maximize2 />}
-              </Button>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => setOpen(false)}
-                aria-label="Close assistant"
-              >
-                <X />
-              </Button>
-            </div>
-          </div>
-          <div className="min-h-0 flex-1">
-            <ChatPanel wide={expanded} />
-          </div>
-        </div>
-      )}
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        aria-label="Open catalog assistant"
+        className="fixed right-4 bottom-4 z-50 flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg outline-none transition hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+      >
+        <MessageCircle className="size-5" aria-hidden />
+      </button>
+    );
+  }
 
-      {!open && (
-        <button
-          type="button"
-          onClick={() => setOpen(true)}
-          aria-label="Open catalog assistant"
-          className="flex size-12 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg outline-none transition hover:bg-primary/90 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-        >
-          <MessageCircle className="size-5" aria-hidden />
-        </button>
+  return (
+    <div
+      className={cn(
+        "fixed bottom-4 z-50 flex flex-col overflow-hidden rounded-xl border bg-popover text-popover-foreground shadow-xl",
+        // Anchored bottom-right in both states; only the box size changes.
+        "right-4",
+        expanded
+          ? "h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-6xl"
+          : "h-[32rem] max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-sm",
       )}
+    >
+      <div className="flex shrink-0 items-center justify-between border-b px-4 py-3">
+        <div>
+          <p className="text-sm font-semibold">Catalog assistant</p>
+          <p className="text-xs text-muted-foreground">
+            Product questions &amp; recommendations
+          </p>
+        </div>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setExpanded((v) => !v)}
+            aria-label={expanded ? "Shrink assistant" : "Expand assistant"}
+          >
+            {expanded ? <Minimize2 /> : <Maximize2 />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setOpen(false)}
+            aria-label="Close assistant"
+          >
+            <X />
+          </Button>
+        </div>
+      </div>
+
+      <div className="min-h-0 flex-1">
+        <ChatPanel />
+      </div>
     </div>
   );
 }

@@ -5,18 +5,17 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { SendHorizontal } from "lucide-react";
 
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ChatMessage } from "@/components/chat/chat-message";
 import type { ChatUIMessage } from "@/lib/chat/types";
 
 const SUGGESTIONS = [
-  "I need a lightweight wheelchair I can lift into a car",
-  "What's the safe working load on the bariatric rollator?",
-  "Recommend something for getting around the house safely",
+  "How far can the Aspire Elio go on one charge?",
+  "I'm 80kg and my front door is 0.6m wide — give me a foldable scooter under $3k with at least 20km range",
+  "What medications are covered under my insurance plan?",
 ];
 
-export function ChatPanel({ wide = false }: { wide?: boolean }) {
+export function ChatPanel() {
   const { messages, sendMessage, status, error } = useChat<ChatUIMessage>({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
   });
@@ -26,7 +25,8 @@ export function ChatPanel({ wide = false }: { wide?: boolean }) {
   const busy = status === "submitted" || status === "streaming";
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
+    const el = scrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
   }, [messages, status]);
 
   function submit(text: string) {
@@ -37,18 +37,13 @@ export function ChatPanel({ wide = false }: { wide?: boolean }) {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <div
         ref={scrollRef}
-        className="flex-1 overflow-y-auto p-4"
+        className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-4"
         aria-live="polite"
       >
-        <div
-          className={cn(
-            "space-y-3",
-            wide && "mx-auto max-w-3xl",
-          )}
-        >
+        <div className="mx-auto max-w-3xl space-y-3">
           {messages.length === 0 ? (
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
@@ -61,7 +56,7 @@ export function ChatPanel({ wide = false }: { wide?: boolean }) {
                     key={s}
                     type="button"
                     onClick={() => submit(s)}
-                    className="rounded-full border px-3 py-1 text-left text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                    className="rounded-lg border px-3 py-1.5 text-left text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
                   >
                     {s}
                   </button>
@@ -69,9 +64,7 @@ export function ChatPanel({ wide = false }: { wide?: boolean }) {
               </div>
             </div>
           ) : (
-            messages.map((m) => (
-              <ChatMessage key={m.id} message={m} wide={wide} />
-            ))
+            messages.map((m) => <ChatMessage key={m.id} message={m} />)
           )}
 
           {status === "submitted" && (
@@ -86,10 +79,7 @@ export function ChatPanel({ wide = false }: { wide?: boolean }) {
       </div>
 
       <form
-        className={cn(
-          "flex items-center gap-2 border-t p-3",
-          wide && "mx-auto w-full max-w-3xl",
-        )}
+        className="mx-auto flex w-full max-w-3xl items-center gap-2 border-t p-3"
         onSubmit={(e) => {
           e.preventDefault();
           submit(input);
@@ -99,7 +89,7 @@ export function ChatPanel({ wide = false }: { wide?: boolean }) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask about a product…"
-          className="flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          className="min-w-0 flex-1 rounded-md border bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
           aria-label="Message"
         />
         <Button

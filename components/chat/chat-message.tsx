@@ -15,24 +15,17 @@ function Thinking({ label }: { label: string }) {
   );
 }
 
-export function ChatMessage({
-  message,
-  wide = false,
-}: {
-  message: ChatUIMessage;
-  wide?: boolean;
-}) {
+export function ChatMessage({ message }: { message: ChatUIMessage }) {
   const isUser = message.role === "user";
 
   return (
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "space-y-2 rounded-lg px-3 py-2 text-sm",
-          isUser ? "max-w-[85%]" : wide ? "w-full max-w-2xl" : "max-w-[85%]",
+          "min-w-0 space-y-2 rounded-lg px-3 py-2 text-sm",
           isUser
-            ? "bg-primary text-primary-foreground"
-            : "bg-muted text-foreground",
+            ? "max-w-[85%] bg-primary text-primary-foreground"
+            : "max-w-[42rem] bg-muted text-foreground",
         )}
       >
         {message.parts.map((part, i) => {
@@ -49,15 +42,7 @@ export function ChatMessage({
               const { products } = part.output;
               if (products.length === 0) return null;
               return (
-                <div
-                  key={i}
-                  className={cn(
-                    "gap-2",
-                    wide && products.length > 1
-                      ? "grid sm:grid-cols-2"
-                      : "space-y-2",
-                  )}
-                >
+                <div key={i} className="space-y-2">
                   {products.map((product) => (
                     <ChatProductCard key={product.id} product={product} />
                   ))}
@@ -68,14 +53,20 @@ export function ChatMessage({
           }
 
           if (part.type === "tool-findProducts") {
-            if (part.state === "output-available" || part.state === "output-error") {
+            if (
+              part.state === "output-available" ||
+              part.state === "output-error"
+            ) {
               return null;
             }
             return <Thinking key={i} label="Searching the catalog…" />;
           }
 
           if (part.type === "tool-getProductInfo") {
-            if (part.state === "output-available" || part.state === "output-error") {
+            if (
+              part.state === "output-available" ||
+              part.state === "output-error"
+            ) {
               return null;
             }
             return <Thinking key={i} label="Checking product details…" />;
