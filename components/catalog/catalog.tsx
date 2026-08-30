@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { ShieldCheck } from "lucide-react";
 
 import { CatalogProvider } from "@/components/catalog/catalog-store";
+import { ChatWidget } from "@/components/chat/chat-widget";
 import { FilterPanel } from "@/components/catalog/filter-panel";
 import { SortControl } from "@/components/catalog/sort-control";
 import { ProductResults } from "@/components/catalog/product-results";
@@ -84,6 +85,8 @@ export async function Catalog() {
           </Suspense>
         </div>
       </div>
+
+      <ChatWidget />
     </CatalogProvider>
   );
 }

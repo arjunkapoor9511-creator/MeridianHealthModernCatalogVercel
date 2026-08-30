@@ -5,6 +5,90 @@ states the context, the decision, and the trade-offs accepted.
 
 ---
 
+## 2026-08-30 — Catalog chatbot: AI SDK agent + AI Gateway over Azure AI Search, cohort-guarded and hard-scoped
+
+**Status:** Accepted
+
+### Context
+
+The catalog lets a member browse, filter, open a product popup, and add to
+basket — but not *ask* anything. We want a floating assistant on `/` that does
+exactly two jobs: answer a question about a specific product, and recommend
+products for a stated need (rendering product cards with Add to basket).
+Everything else must be deflected with a fixed line. Recommendations retrieve
+from an existing Azure AI Search index (hybrid vector + keyword, integrated
+vectorizer). The bot must never surface a product outside the member's plan.
+
+### Decision
+
+- **Vercel AI SDK (`ai` v7, `@ai-sdk/react`) + AI Gateway.** Models are plain
+  `"provider/model"` strings routed through the gateway — no provider SDK.
+  `anthropic/claude-sonnet-5` for the agent loop, `anthropic/claude-haiku-4.5`
+  as the gateway failover model (kept in-family so the Anthropic `thinking`
+  option still applies — a cross-provider reasoning model leaks planning text
+  into the answer) and for the scope pre-classifier.
+  `providerOptions.gateway` carries `user` (verified member id, for per-user rate
+  limiting), `tags: ['feature:catalog-chat']`, and the failover `models` list.
+  Runs on the default Node.js runtime — streaming needs no `runtime = 'edge'`.
+- **`POST /api/chat`** (never cached) verifies `mm_session` itself (outside
+  `proxy.ts`, same as `/api/product-detail`), then:
+  1. `classifyScope()` (haiku, `generateObject` enum) on the latest turn →
+     `out_of_scope` streams the exact fixed line, no agent call.
+  2. otherwise `streamText` with the cohort-bound tools, `stopWhen:
+     isStepCount(4)`, streamed back as a UI message response.
+- **Two tools, both bound to the verified `insurance` cohort** (`lib/chat/tools.ts`):
+  - `searchProducts({ query })` → `searchCatalog()` hits Azure AI Search REST
+    (`lib/chat/search.ts`, plain `fetch` + `api-key`, mirroring `lib/products.ts`)
+    → **hydrates SKUs against `getProducts(insurance)`**. The index is a
+    product-*statement* knowledge base (many rows per product, `statement` +
+    `statement_vector` 3072-dim, `primary_sku`) spanning all products with **no
+    cohort field and only `id` filterable** — so `searchCatalog` collapses rows
+    to distinct SKUs and the hydration intersection is the *sole* cohort
+    guarantee: an out-of-plan or unknown SKU can't reach the model or UI.
+    Returns full `Product[]` (capped at 6); the UI renders cards, so the model
+    is told to keep prose to one framing line.
+  - `getProductInfo({ sku })` → cohort-checks the SKU, then `getProductDetail(sku)`
+    (existing `use cache` fn) for description / specs / warranty / files.
+- **Scope enforced twice:** the classifier pre-gate *and* the system prompt,
+  which also inlines the member's ~25-item catalog digest (name/brand/category/
+  price/SKU) so the model can resolve names → SKUs, answer basic price/category
+  questions without a tool call, and know exactly what is in scope.
+- **UI:** `<ChatWidget>` — a fixed bottom-right launcher (tiny) that
+  `next/dynamic(ssr:false)`-loads `<ChatPanel>` (the AI SDK client runtime) on
+  first open, so it never touches the catalog's initial render / LCP. Rendered
+  only in the authenticated branch of `components/catalog/catalog.tsx`.
+  `chat-product-card.tsx` reuses `useCart().add` and the existing
+  `ProductDetailDialog`.
+- **Conversation state is ephemeral** (in `useChat`, lost on reload) — same
+  posture as the in-memory filter/sort state.
+
+### Consequences
+
+- New env: `AZURE_SEARCH_ENDPOINT` / `AZURE_SEARCH_INDEX` / `AZURE_SEARCH_KEY`
+  (query key), `CHAT_SUPPORT_CONTACT`, optional `AI_GATEWAY_API_KEY` (OIDC is the
+  default on Vercel). All must be set in Vercel Dev/Preview/Prod. AI Gateway must
+  be enabled on the project.
+- The Azure index field names (`statement_vector`, `primary_sku`, `statement`,
+  `product_name`) and `api-version` are constants in `lib/chat/search.ts`,
+  matched to the live index on 2026-08-30.
+- Deviates from the approved plan's `ToolLoopAgent` wording — used `streamText`
+  directly (documented Next.js path; cleaner access to `providerOptions`,
+  `onError`, and per-request tool closures). Same behaviour.
+- The scope classifier adds one cheap model call per turn (fails open to
+  in-scope; the system prompt is the backstop).
+- `zod` pinned to `4.4.3` exact — the internal registry's `latest` dist-tag
+  points at a canary.
+
+### Related
+
+- Working doc: `chatbot-plan.md` (gitignored). Approved plan:
+  `~/.claude/plans/we-need-a-plan-glimmering-flame.md`.
+- Reuses the `mm_session` contract, `getProducts` / `getProductDetail` +
+  `use cache` / `cacheTag`, the `Product` shape, and the cart store from the two
+  entries below.
+
+---
+
 ## 2026-08-30 — Product detail popup: client Dialog over a cached API route, not an intercepting route
 
 **Status:** Accepted
