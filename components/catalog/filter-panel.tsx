@@ -62,16 +62,23 @@ export function FilterPanel({ facets }: { facets: Facets }) {
     ...(facets.propellingMethods.length > 0 ? ["propelling"] : []),
     ...numericSections.map((k) => `num-${k}`),
   ];
+  const active = isFilterActive(filters);
 
   return (
     <aside className="space-y-5">
-      <div className="flex items-center justify-between">
+      {/* Fixed height so toggling "Clear all" never reflows the rail. */}
+      <div className="flex h-7 items-center justify-between">
         <h2 className="text-sm font-semibold">Filters</h2>
-        {isFilterActive(filters) && (
-          <Button variant="ghost" size="xs" onClick={clear}>
-            Clear all
-          </Button>
-        )}
+        <Button
+          variant="ghost"
+          size="xs"
+          onClick={clear}
+          tabIndex={active ? undefined : -1}
+          aria-hidden={!active}
+          className={active ? undefined : "pointer-events-none invisible"}
+        >
+          Clear all
+        </Button>
       </div>
 
       {/* Category - the primary filter, always visible */}

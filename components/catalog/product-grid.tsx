@@ -23,7 +23,10 @@ export function ProductGrid({ products }: { products: Product[] }) {
 
   return (
     <div className="space-y-4">
-      <p className="text-sm text-muted-foreground" aria-live="polite">
+      <p
+        className="flex h-5 items-center text-sm text-muted-foreground"
+        aria-live="polite"
+      >
         {visible.length === products.length
           ? `${products.length} products`
           : `${visible.length} of ${products.length} products`}

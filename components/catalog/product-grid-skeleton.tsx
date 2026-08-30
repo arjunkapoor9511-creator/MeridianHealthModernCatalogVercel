@@ -24,12 +24,17 @@ function ProductCardSkeleton() {
 export const CATALOG_GRID_CLASS =
   "grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4";
 
+/** Mirrors <ProductGrid>'s wrapper exactly — the `space-y-4` container and the
+ *  result-count line — so streaming the real grid in shifts nothing. */
 export function ProductGridSkeleton({ count = 8 }: { count?: number }) {
   return (
-    <div className={CATALOG_GRID_CLASS} aria-hidden>
-      {Array.from({ length: count }, (_, i) => (
-        <ProductCardSkeleton key={i} />
-      ))}
+    <div className="space-y-4" aria-hidden>
+      <Skeleton className="h-5 w-28" />
+      <div className={CATALOG_GRID_CLASS}>
+        {Array.from({ length: count }, (_, i) => (
+          <ProductCardSkeleton key={i} />
+        ))}
+      </div>
     </div>
   );
 }
