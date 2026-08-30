@@ -60,6 +60,15 @@ Option B.
   another button).
 - **Files:** plain `<a target="_blank" rel="noopener noreferrer">` — the
   browser opens the PDF in a new tab; no download attribute.
+- **Stable popup height (`expandable.tsx`).** Detail copy varies a lot between
+  products (2 lines to many paragraphs of features + an 11-row spec bag). The
+  streamed region is wrapped in an `<Expandable>` that caps it at a fixed
+  collapsed height (`COLLAPSED_DETAIL_HEIGHT`, measured with a `ResizeObserver`
+  in `useLayoutEffect`) with a fade + "Show more" toggle, and the surrounding
+  slot has a matching `min-height` that the loading skeleton also fills.
+  Measured result: the skeleton→content swap moves 0px and the capped body is
+  the same height for every product; only the always-visible product title
+  (1–3 lines) still varies the total by up to ~48px.
 
 ### Consequences
 

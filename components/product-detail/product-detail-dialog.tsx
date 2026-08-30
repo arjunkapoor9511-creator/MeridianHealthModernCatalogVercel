@@ -20,6 +20,10 @@ import {
 } from "@/components/ui/dialog";
 import { Separator } from "@/components/ui/separator";
 import { AddToCartButton } from "@/components/product-detail/add-to-cart-button";
+import {
+  COLLAPSED_DETAIL_HEIGHT,
+  Expandable,
+} from "@/components/product-detail/expandable";
 import { ProductDetailSkeleton } from "@/components/product-detail/product-detail-skeleton";
 import { ProductFeatures } from "@/components/product-detail/product-features";
 import { ProductFiles } from "@/components/product-detail/product-files";
@@ -103,38 +107,55 @@ export function ProductDetailDialog({
 
               <Separator />
 
-              {state.status === "loading" && <ProductDetailSkeleton />}
+              {/* Fixed min-height so the loading skeleton, the collapsed
+                  content, and the error note all occupy the same space — the
+                  popup opens at one height for every product. */}
+              <div className="min-h-80">
+                {state.status === "loading" && (
+                  <div
+                    className="relative overflow-hidden"
+                    style={{ maxHeight: COLLAPSED_DETAIL_HEIGHT }}
+                  >
+                    <ProductDetailSkeleton />
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-20 bg-linear-to-t from-popover to-transparent" />
+                  </div>
+                )}
 
-              {state.status === "error" && (
-                <p className="text-sm text-muted-foreground">
-                  Full details aren&apos;t available right now. Price and
-                  availability above are current.
-                </p>
-              )}
+                {state.status === "error" && (
+                  <p className="text-sm text-muted-foreground">
+                    Full details aren&apos;t available right now. Price and
+                    availability above are current.
+                  </p>
+                )}
 
-              {state.status === "ready" && detail && (
-                <div className="space-y-5">
-                  {detail.description && (
-                    <p className="text-sm leading-relaxed text-muted-foreground">
-                      {detail.description}
-                    </p>
-                  )}
+                {state.status === "ready" && detail && (
+                  <Expandable key={shown.sku}>
+                    <div className="space-y-5">
+                      {detail.description && (
+                        <p className="text-sm leading-relaxed text-muted-foreground">
+                          {detail.description}
+                        </p>
+                      )}
 
-                  <ProductFeatures features={detail.features} />
-                  <ProductSpecs specs={detail.specs} />
+                      <ProductFeatures features={detail.features} />
+                      <ProductSpecs specs={detail.specs} />
 
-                  {detail.warranty && (
-                    <section>
-                      <h3 className="mb-1 text-sm font-semibold">Warranty</h3>
-                      <p className="text-sm text-muted-foreground">
-                        {detail.warranty}
-                      </p>
-                    </section>
-                  )}
+                      {detail.warranty && (
+                        <section>
+                          <h3 className="mb-1 text-sm font-semibold">
+                            Warranty
+                          </h3>
+                          <p className="text-sm text-muted-foreground">
+                            {detail.warranty}
+                          </p>
+                        </section>
+                      )}
 
-                  <ProductFiles files={detail.files} />
-                </div>
-              )}
+                      <ProductFiles files={detail.files} />
+                    </div>
+                  </Expandable>
+                )}
+              </div>
             </div>
           </div>
         </DialogContent>
