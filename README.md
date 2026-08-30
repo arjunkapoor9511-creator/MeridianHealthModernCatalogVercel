@@ -3,9 +3,17 @@
 A Next.js (App Router) app that renders the Meridian Health product catalog.
 Catalog data comes from an Azure Functions HTTP API backed by Azure SQL.
 
-/ (landing page) renders the raw JSON response from the products API for the
-signed-in user's insurance cohort. Access is gated by a demo session (see
+`/` is the product catalog for the signed-in member: a "Meridian Health" header
+with a slide-over basket, a member/insurance bar, a filter rail (category,
+propelling method, and dimension/weight/safe-working-load ranges), a sort
+control, and a product grid. Access is gated by a demo session (see
 [Demo auth](#demo-auth)).
+
+Rendering uses **Cache Components / PPR** (`cacheComponents: true`): the header,
+filter rail, sort control and member bar are in the prerendered shell / stream
+instantly; only the product grid — a `use cache` fetch keyed by insurance — 
+streams behind a Suspense boundary. Filtering and sorting run client-side over
+the cached cohort list. See [DECISIONS.md](DECISIONS.md) and `catalog-plan.md`.
 
 ## Prerequisites
 
@@ -49,6 +57,7 @@ Next.js reads `.env.local` only at startup — restart the dev server after edit
 | `npm run build` | Production build                     |
 | `npm run start` | Serve the production build           |
 | `npm run lint`  | ESLint                               |
+| `node scripts/derive-facets.mjs` | Regenerate `lib/catalog-facets.generated.ts` (per-insurance filter facets) from the live API |
 
 ## Data source
 
@@ -63,10 +72,14 @@ The API contract and sample requests live in the MeridianHealth repo
 
 ## How data flows
 
-The landing page ([app/page.tsx](app/page.tsx)) is an async Server Component. It
-calls the Azure API on the server, caches the response
-(`next: { revalidate: 300 }`), and renders it. The Azure URL and key never reach
-the browser. See [DECISIONS.md](DECISIONS.md) for the rationale.
+`proxy.ts` verifies the session and injects `x-user-*` headers. `Catalog`
+([components/catalog/catalog.tsx](components/catalog/catalog.tsx)) reads them
+(request-time, no async → streams instantly) and lays out the member bar, filter
+rail and sort control. `getProducts(insurance)`
+([lib/products.ts](lib/products.ts)) is a `use cache` function (one warm entry
+per insurance) whose result streams into the grid behind a Suspense boundary.
+The Azure URL and key never reach the browser. Filtering / sorting then run
+client-side over that list. See [DECISIONS.md](DECISIONS.md) for the rationale.
 
 ## Demo auth
 
@@ -143,17 +156,27 @@ node scripts/cohort.mjs            # prints the table + effective routing per co
 
 ```
 proxy.ts         Session gate + cohort routing (runs before every page)
+next.config.ts   cacheComponents (PPR) + next/image config
 app/
-  layout.tsx     Root layout (html/body, fonts, metadata)
-  page.tsx       Landing page — renders the products JSON for the session's insurance
-  globals.css    Global styles (Tailwind v4)
+  layout.tsx     Root layout (fonts, CartProvider, Toaster)
+  page.tsx       Catalog page — static shell + <Suspense><Catalog/>
+  globals.css    Global styles + design tokens (Tailwind v4 / shadcn)
   api/
     demo-login/  GET route: persona → session cookie → redirect
 lib/
   session.ts     Sign / verify the demo session JWT
   routing.ts     modern-vs-legacy decision, backed by Global Config
+  products.ts    getProducts() — cached (`use cache`) Azure fetch
+  catalog.ts     Catalog types + pure filter / sort / facet helpers
+  catalog-facets.generated.ts   Per-insurance filter facets (generated)
+components/
+  site-header.tsx   Wordmark + basket button (static shell)
+  catalog/          Server + client pieces of the catalog page
+  cart/             Cart store (localStorage) + slide-over sheet
+  ui/               shadcn/ui primitives
 scripts/
-  cohort.mjs     Cut a cohort over / roll back (edits Global Config, no redeploy)
+  cohort.mjs        Cut a cohort over / roll back (edits Global Config)
+  derive-facets.mjs Regenerate lib/catalog-facets.generated.ts
 public/          Static assets
 ```
 

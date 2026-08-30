@@ -5,6 +5,69 @@ states the context, the decision, and the trade-offs accepted.
 
 ---
 
+## 2026-08-29 — Catalog page: PPR via Cache Components; client-side filter/sort over a cached fetch
+
+**Status:** Accepted
+
+### Context
+
+`/` needs to become a real product catalog (header + member/insurance bar,
+filter rail, sort control, product grid, slide-over basket) instead of dumping
+raw JSON. Requirements: the shell — chrome, filters, sort, identity — must paint
+immediately; only the grid should stream; cache everything cacheable; high LCP,
+no layout shift.
+
+### Decision
+
+- **`cacheComponents: true`** (Next 16's PPR model; `experimental_ppr` was
+  removed in v16). `app/page.tsx` is a static shell (`SiteHeader` +
+  `CatalogShellSkeleton`) with a `<Suspense>` hole for `<Catalog>`.
+- **`<Catalog>` reads only `headers()`** (the verified `x-user-*` from
+  `proxy.ts`) — no async work — so the member bar, filter rail and sort control
+  stream in the same tick. A nested `<Suspense>` wraps `<ProductResults>`, whose
+  `getProducts(insurance)` is the only real fetch.
+- **`getProducts` is `use cache`** with `cacheTag('products:<insurance>')` and a
+  long `cacheLife({ stale: 300, revalidate: 3600, expire: 86400 })` — the API is
+  keyed by insurance and changes rarely, so one warm entry per cohort serves
+  ~all traffic. Replaces the old `next: { revalidate: 300 }` inline fetch;
+  extracted to `lib/products.ts` (`server-only`) now that the page, grid and
+  facet tooling share the shape — the "second consumer" trigger noted below.
+- **Filter + sort run client-side** over the full cohort list (≤26 items) sent
+  once in the cached grid payload. No server round-trips after load; the grid
+  stays fully cacheable. Filter/sort state is in-memory (resets on reload).
+- **Filter facet values are build-time-derived** per insurance
+  (`lib/catalog-facets.generated.ts`, via `scripts/derive-facets.mjs`) so the
+  rail can render its real options before the product fetch resolves.
+- **Images:** `next/image` in a fixed `aspect-square` box (varying source sizes
+  never shift layout), `sizes` set for the grid, first row `priority`,
+  dimension-matched skeleton cards in the static shell. `next.config.ts`
+  `images`: blob-host `remotePatterns`, avif/webp, `minimumCacheTTL` 30d.
+- **UI:** shadcn/ui (`sheet` for the basket, `accordion`/`slider`/`select` for
+  filters/sort, `sonner` for the "Place order → under development" toast).
+- **Basket** state persists to `localStorage` (`components/cart/cart-store.tsx`).
+
+### Consequences
+
+- The member bar / filter rail depend on a per-request header, so they are not
+  in the *true* static HTML — but the read is synchronous, so the stream is
+  imperceptible. Same trade-off already accepted for `await headers()` below.
+- `cacheComponents: true` is repo-wide: `app/api/demo-login` and `proxy.ts` were
+  checked to still build. Route segment configs (`revalidate`, `dynamic`) are
+  now off-limits — use `use cache` / `cacheLife`.
+- Facet sets are a committed generated artifact; stale if the catalog schema
+  changes and `derive-facets.mjs` isn't re-run.
+- No per-facet result counts in the rail (would need the product list before it
+  streams). Clicking a product card is intentionally a no-op for now.
+
+### Related
+
+- Working design doc: `catalog-plan.md` (gitignored).
+- Supersedes the rendering approach in the entry below ("Fetch products directly
+  in a Server Component") — the direct fetch moved into `lib/products.ts` with
+  `use cache`, as that entry anticipated.
+
+---
+
 ## 2026-08-29 — Cohort routing table in Global Config, read directly (not via the Flags SDK)
 
 **Status:** Accepted
