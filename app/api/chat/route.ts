@@ -92,7 +92,6 @@ export async function POST(req: Request): Promise<Response> {
     return createUIMessageStreamResponse({
       stream: toUIMessageStream({
         stream: result.stream,
-        sendReasoning: true,
         onError: (error) => {
           console.error("chat stream error", error);
           return "Sorry — something went wrong. Please try again.";

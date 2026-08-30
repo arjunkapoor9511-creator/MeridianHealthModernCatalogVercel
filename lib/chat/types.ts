@@ -1,5 +1,5 @@
 // End-to-end types for the catalog chatbot. Shared by the route handler and the
-// client components so tool-result parts (`tool-searchProducts`, etc.) are typed
+// client components so tool-result parts (`tool-showProducts`, etc.) are typed
 // in the UI.
 
 import type { InferUITools, UIMessage } from "ai";

@@ -5,6 +5,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
 import { SendHorizontal } from "lucide-react";
 
+import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { ChatMessage } from "@/components/chat/chat-message";
 import type { ChatUIMessage } from "@/lib/chat/types";
@@ -15,7 +16,7 @@ const SUGGESTIONS = [
   "Recommend something for getting around the house safely",
 ];
 
-export function ChatPanel() {
+export function ChatPanel({ wide = false }: { wide?: boolean }) {
   const { messages, sendMessage, status, error } = useChat<ChatUIMessage>({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
   });
@@ -39,44 +40,56 @@ export function ChatPanel() {
     <div className="flex h-full flex-col">
       <div
         ref={scrollRef}
-        className="flex-1 space-y-3 overflow-y-auto p-4"
+        className="flex-1 overflow-y-auto p-4"
         aria-live="polite"
       >
-        {messages.length === 0 ? (
-          <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">
-              Ask about a product in your plan, or tell me what you need and
-              I&apos;ll suggest options.
-            </p>
-            <div className="flex flex-col items-start gap-1.5">
-              {SUGGESTIONS.map((s) => (
-                <button
-                  key={s}
-                  type="button"
-                  onClick={() => submit(s)}
-                  className="rounded-full border px-3 py-1 text-left text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
-                >
-                  {s}
-                </button>
-              ))}
+        <div
+          className={cn(
+            "space-y-3",
+            wide && "mx-auto max-w-3xl",
+          )}
+        >
+          {messages.length === 0 ? (
+            <div className="space-y-3">
+              <p className="text-sm text-muted-foreground">
+                Ask about a product in your plan, or tell me what you need and
+                I&apos;ll suggest options.
+              </p>
+              <div className="flex flex-col items-start gap-1.5">
+                {SUGGESTIONS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => submit(s)}
+                    className="rounded-full border px-3 py-1 text-left text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
+                  >
+                    {s}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        ) : (
-          messages.map((m) => <ChatMessage key={m.id} message={m} />)
-        )}
+          ) : (
+            messages.map((m) => (
+              <ChatMessage key={m.id} message={m} wide={wide} />
+            ))
+          )}
 
-        {status === "submitted" && (
-          <p className="text-xs text-muted-foreground">Thinking…</p>
-        )}
-        {error && (
-          <p className="text-xs text-destructive">
-            Something went wrong. Please try again.
-          </p>
-        )}
+          {status === "submitted" && (
+            <p className="text-xs text-muted-foreground">Thinking…</p>
+          )}
+          {error && (
+            <p className="text-xs text-destructive">
+              Something went wrong. Please try again.
+            </p>
+          )}
+        </div>
       </div>
 
       <form
-        className="flex items-center gap-2 border-t p-3"
+        className={cn(
+          "flex items-center gap-2 border-t p-3",
+          wide && "mx-auto w-full max-w-3xl",
+        )}
         onSubmit={(e) => {
           e.preventDefault();
           submit(input);

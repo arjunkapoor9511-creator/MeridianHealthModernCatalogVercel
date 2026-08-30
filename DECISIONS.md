@@ -24,9 +24,9 @@ vectorizer). The bot must never surface a product outside the member's plan.
 - **Vercel AI SDK (`ai` v7, `@ai-sdk/react`) + AI Gateway.** Models are plain
   `"provider/model"` strings routed through the gateway — no provider SDK.
   `anthropic/claude-sonnet-5` for the agent loop, `anthropic/claude-haiku-4.5`
-  as the gateway failover model (kept in-family so the Anthropic `thinking`
-  option still applies — a cross-provider reasoning model leaks planning text
-  into the answer) and for the scope pre-classifier.
+  as the gateway failover model (kept in-family — a cross-provider reasoning
+  model can leak planning text into the answer) and for the scope pre-classifier.
+  Model reasoning/thinking is **not** surfaced — tried it, it was noise.
   `providerOptions.gateway` carries `user` (verified member id, for per-user rate
   limiting), `tags: ['feature:catalog-chat']`, and the failover `models` list.
   Runs on the default Node.js runtime — streaming needs no `runtime = 'edge'`.
@@ -36,19 +36,23 @@ vectorizer). The bot must never surface a product outside the member's plan.
      `out_of_scope` streams the exact fixed line, no agent call.
   2. otherwise `streamText` with the cohort-bound tools, `stopWhen:
      isStepCount(4)`, streamed back as a UI message response.
-- **Two tools, both bound to the verified `insurance` cohort** (`lib/chat/tools.ts`):
-  - `searchProducts({ query })` → `searchCatalog()` hits Azure AI Search REST
+- **Three tools, all bound to the verified `insurance` cohort** (`lib/chat/tools.ts`):
+  - `findProducts({ query })` → `searchCatalog()` hits Azure AI Search REST
     (`lib/chat/search.ts`, plain `fetch` + `api-key`, mirroring `lib/products.ts`)
     → **hydrates SKUs against `getProducts(insurance)`**. The index is a
     product-*statement* knowledge base (many rows per product, `statement` +
     `statement_vector` 3072-dim, `primary_sku`) spanning all products with **no
     cohort field and only `id` filterable** — so `searchCatalog` collapses rows
     to distinct SKUs and the hydration intersection is the *sole* cohort
-    guarantee: an out-of-plan or unknown SKU can't reach the model or UI.
-    Returns full `Product[]` (capped at 6); the UI renders cards, so the model
-    is told to keep prose to one framing line.
+    guarantee. When Azure is unavailable it falls back to a keyword rank over
+    the cohort catalog (`degraded: true`) so recommendations still work.
+    Returns lightweight candidates — it renders nothing.
   - `getProductInfo({ sku })` → cohort-checks the SKU, then `getProductDetail(sku)`
     (existing `use cache` fn) for description / specs / warranty / files.
+  - `showProducts({ skus })` → the only tool that renders cards (≤3, cohort-
+    checked, full `Product` + Add to basket). The model calls it to surface
+    recommendations *and* right after it confirms a specific product meets a
+    stated requirement ("Positive fit → show the card so they can add it").
 - **Scope enforced twice:** the classifier pre-gate *and* the system prompt,
   which also inlines the member's ~25-item catalog digest (name/brand/category/
   price/SKU) so the model can resolve names → SKUs, answer basic price/category
