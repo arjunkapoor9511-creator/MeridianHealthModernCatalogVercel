@@ -24,15 +24,24 @@ pass one JWT with all user attributes in the redirect URL.
   302-redirects to `/`. The persona→identity map lives inline in the route — it
   stands in for a member/eligibility service lookup.
 - **`proxy.ts`** (Next.js 16's renamed middleware, Node.js runtime) verifies the
-  cookie on every page request. No/invalid session → 302 to
-  `MARKETPLACE_ENTRY_URL` (the storefront). Valid → it strips any client-supplied
-  `x-user-*` headers and injects the **verified** `x-user-insurance` / `-sub` /
-  `-name` for the render.
+  cookie on every page request and routes by cohort:
+  - no/invalid session → 302 to `MARKETPLACE_ENTRY_URL` (the storefront);
+  - **migrated** cohort (`MIGRATED` array — `unitedhealthcare` today) → continue
+    to this app, stripping any client-supplied `x-user-*` and injecting the
+    **verified** `x-user-insurance` / `-sub` / `-name`;
+  - **not-yet-migrated** cohort (`humana`) → `NextResponse.rewrite` to
+    `LEGACY_ORIGIN` — transparent, the browser URL stays on this domain.
 - **`app/page.tsx`** reads `x-user-insurance` instead of a hard-coded constant.
 - The persona query param is not a secret and rides in the URL; the **session
   credential is only ever set server-side in a cookie**, never in a URL.
-- Both cohorts currently render on this app. The "not-yet-migrated → rewrite to
-  the legacy origin" branch is a commented stub in `proxy.ts`.
+- `MIGRATED` is hard-coded for the demo; production would read it from Edge Config
+  so cohorts flip without a redeploy (with per-user overrides for testing).
+- **Rewrite, not redirect**, for the legacy hop: keeps the strangler facade
+  (users don't see a different URL). Trade-off accepted: the legacy site's own
+  deep links (`/marketplace/*`) resolve against this domain and 404 until a
+  unified domain exists; only its landing page works through the rewrite, which
+  is all the demo needs. The legacy blob is self-contained (inline CSS/JS), so
+  the landing page renders correctly when proxied.
 
 ### Consequences
 

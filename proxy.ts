@@ -1,20 +1,19 @@
 // ---------------------------------------------------------------------------
 // proxy.ts  (Next.js 16 renamed "middleware" -> "proxy"; file lives at repo root)
 // ---------------------------------------------------------------------------
-// Runs before every page render (see `config.matcher`). Its job in this demo:
+// Runs before every page render (see `config.matcher`). It is the strangler-fig
+// router for the demo:
 //
 //   1. Read + verify the mm_session cookie.
-//   2. No / invalid session  -> 302 back to the MeridianHealth storefront.
-//   3. Valid session         -> strip any client-supplied x-user-* headers,
-//                               set the VERIFIED insurance / sub / name as
-//                               request headers, and continue to the app.
+//   2. No / invalid session      -> 302 back to the MeridianHealth storefront.
+//   3. Session, MIGRATED cohort  -> continue to this app, injecting the verified
+//                                   x-user-* headers for the render.
+//   4. Session, NOT-migrated     -> transparently rewrite to the legacy fork
+//                                   (URL stays on this domain).
 //
-// The homepage (app/page.tsx) then reads x-user-insurance to decide which
-// insurance cohort's products to fetch.
-//
-// FUTURE (strangler-fig): when a cohort has NOT yet been migrated, rewrite the
-// request to the legacy origin instead of continuing. That branch is stubbed
-// out below until the legacy fork exists.
+// Cohort routing (MIGRATED below) is hard-coded for the demo. In production this
+// is an Edge Config lookup so cohorts can be flipped without a redeploy, with
+// per-user overrides for testing.
 //
 // Runtime note: in Next.js 16 proxy runs on the Node.js runtime only, so `jose`
 // (used by verifySessionToken) works here without an edge-compatible build.
@@ -32,9 +31,13 @@ export const config = {
   matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
 };
 
-// Used only if MARKETPLACE_ENTRY_URL is unset, so a missing env var can't crash
-// the proxy or cause a redirect loop.
+// Insurance cohorts that have been migrated onto this app. Anyone else is
+// transparently served the legacy marketplace.
+const MIGRATED: readonly string[] = ["unitedhealthcare"];
+
+// Fallbacks so a missing env var can't crash the proxy or cause a redirect loop.
 const FALLBACK_ENTRY = "https://meridianhealth.example/";
+const FALLBACK_LEGACY = "https://meridianlegacy.z13.web.core.windows.net";
 
 export async function proxy(request: NextRequest): Promise<Response> {
   const token = request.cookies.get(SESSION_COOKIE)?.value;
@@ -48,19 +51,23 @@ export async function proxy(request: NextRequest): Promise<Response> {
     return NextResponse.redirect(new URL(entry), { status: 302 });
   }
 
-  // --- FUTURE: route not-yet-migrated cohorts to the legacy fork ------------
-  // const MIGRATED: string[] = ["unitedhealthcare"]; // flip cohorts on here
-  // if (!MIGRATED.includes(claims.insurance)) {
-  //   return NextResponse.rewrite(
-  //     new URL(
-  //       request.nextUrl.pathname + request.nextUrl.search,
-  //       process.env.LEGACY_ORIGIN!,
-  //     ),
-  //   );
-  // }
-  // For now: BOTH unitedhealthcare and humana render on this app.
+  // --- Not-yet-migrated cohort -> transparently serve the legacy fork ------
+  if (!MIGRATED.includes(claims.insurance)) {
+    const legacyOrigin = process.env.LEGACY_ORIGIN ?? FALLBACK_LEGACY;
+    // rewrite (not redirect): the browser URL stays on this domain; Next
+    // proxies the legacy origin's response. In a real strangler we would also
+    // inject a short-lived signed x-auth-assertion header here for the legacy
+    // app to verify - the static blob site ignores request headers, so we skip
+    // it for the demo.
+    return NextResponse.rewrite(
+      new URL(
+        request.nextUrl.pathname + request.nextUrl.search,
+        legacyOrigin,
+      ),
+    );
+  }
 
-  // --- Signed in -> forward verified identity to the render ----------------
+  // --- Migrated cohort -> forward verified identity to the render ----------
   const requestHeaders = new Headers(request.headers);
   // Never trust x-user-* from the client; overwrite with verified values.
   requestHeaders.delete("x-user-insurance");

@@ -25,9 +25,10 @@ AZURE_PRODUCTS_URL=https://<function-app>.azurewebsites.net/api/products
 AZURE_PRODUCTS_KEY=<function-key>
 SESSION_SECRET=<32+ char random>          # node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 MARKETPLACE_ENTRY_URL=<storefront URL>    # where MeridianHealth/site/index.html is served
+LEGACY_ORIGIN=<legacy marketplace URL>   # not-yet-migrated cohorts are rewritten here
 ```
 
-`.env.local` is gitignored. All four variables must also be set in the Vercel
+`.env.local` is gitignored. All five variables must also be set in the Vercel
 project for the Development, Preview, and Production environments
 (`vercel env add ...`), otherwise builds and requests fail.
 
@@ -75,21 +76,22 @@ storefront "Sign in as Modern Mark / Legacy Luke"
   → GET /api/demo-login?persona=<modern-mark|legacy-luke>
       → maps persona → identity (inline map; stands in for an eligibility service)
       → mints a signed JWT, sets the `mm_session` cookie, 302 → /
-  → proxy.ts verifies the cookie on every page request
-      → no/invalid session → 302 to MARKETPLACE_ENTRY_URL
-      → valid → injects verified x-user-insurance / x-user-sub / x-user-name
+  → proxy.ts verifies the cookie on every page request, then routes by cohort:
+      → no/invalid session          → 302 to MARKETPLACE_ENTRY_URL (storefront)
+      → migrated cohort (united)    → this app; injects verified x-user-* headers
+      → not-yet-migrated (humana)   → transparent rewrite to LEGACY_ORIGIN
   → app/page.tsx reads x-user-insurance and fetches that cohort's products
 ```
 
-| Persona | `sub` | Insurance |
-| ------- | ----- | --------- |
-| `modern-mark` | `UHC-44107` | `unitedhealthcare` (26 products) |
-| `legacy-luke` | `HUM-20938` | `humana` (5 products) |
+| Persona | `sub` | Insurance | Lands on |
+| ------- | ----- | --------- | -------- |
+| `modern-mark` | `UHC-44107` | `unitedhealthcare` | this app (26 products) |
+| `legacy-luke` | `HUM-20938` | `humana` | legacy marketplace (rewrite; URL stays on this domain) |
 
-Both cohorts render on this app for now; `proxy.ts` has a commented stub for
-routing not-yet-migrated cohorts to a legacy origin. Session details, the
-prod-hardening path, and the design rationale are in
-[lib/session.ts](lib/session.ts) and [DECISIONS.md](DECISIONS.md).
+Which cohorts are "migrated" is the `MIGRATED` array in [proxy.ts](proxy.ts) —
+hard-coded for the demo; production would read it from Edge Config so cohorts flip
+without a redeploy. Session details, the prod-hardening path, and the design
+rationale are in [lib/session.ts](lib/session.ts) and [DECISIONS.md](DECISIONS.md).
 
 Quick check:
 
@@ -97,6 +99,7 @@ Quick check:
 npm run dev
 curl -i "http://localhost:3000/api/demo-login?persona=modern-mark"   # 302 + Set-Cookie mm_session
 curl -i "http://localhost:3000/"                                     # 302 → MARKETPLACE_ENTRY_URL (no cookie)
+# with a legacy-luke cookie: GET / returns 200 + header x-middleware-rewrite: <LEGACY_ORIGIN>
 ```
 
 ## Project structure
