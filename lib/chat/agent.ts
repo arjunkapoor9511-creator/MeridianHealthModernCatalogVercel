@@ -90,20 +90,27 @@ export function streamCatalogAgent(opts: StreamCatalogAgentOptions) {
   const { system, modelMessages, insurance, sub, abortSignal } = opts;
 
   return streamText({
+    // Plain "provider/model" string -> routed through the AI Gateway, no
+    // provider SDK import.
     model: CHAT_MODEL,
     system,
     messages: modelMessages,
+    // Cohort-bound: every SKU is checked against getProducts(insurance) inside
+    // the tool before it can reach the model or the UI.
     tools: buildChatTools(insurance),
+    // Cap the tool-calling loop (findProducts -> showProducts is 2 steps;
+    // a question that also shows a card is 2; 6 leaves headroom without looping).
     stopWhen: isStepCount(6),
+    // Client disconnect / navigation aborts the model call (req.signal).
     abortSignal,
     providerOptions: {
       gateway: {
-        user: sub,
+        user: sub, // per-member rate limiting + cost attribution
         tags: [
           "feature:catalog-chat",
           `env:${process.env.VERCEL_ENV ?? "development"}`,
         ],
-        models: [CHAT_FALLBACK_MODEL],
+        models: [CHAT_FALLBACK_MODEL], // failover if the primary is unavailable
       },
     },
   });

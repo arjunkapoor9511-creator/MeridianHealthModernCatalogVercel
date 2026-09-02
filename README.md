@@ -13,7 +13,7 @@ Rendering uses **Cache Components / PPR** (`cacheComponents: true`): the header,
 filter rail, sort control and member bar are in the prerendered shell / stream
 instantly; only the product grid — a `use cache` fetch keyed by insurance — 
 streams behind a Suspense boundary. Filtering and sorting run client-side over
-the cached cohort list. See [DECISIONS.md](DECISIONS.md) and `catalog-plan.md`.
+the cached cohort list. See [DECISIONS.md](non-essential/DECISIONS.md) and `non-essential/catalog-plan.md`.
 
 ## Prerequisites
 
@@ -79,7 +79,7 @@ rail and sort control. `getProducts(insurance)`
 ([lib/products.ts](lib/products.ts)) is a `use cache` function (one warm entry
 per insurance) whose result streams into the grid behind a Suspense boundary.
 The Azure URL and key never reach the browser. Filtering / sorting then run
-client-side over that list. See [DECISIONS.md](DECISIONS.md) for the rationale.
+client-side over that list. See [DECISIONS.md](non-essential/DECISIONS.md) for the rationale.
 
 ## Demo auth
 
@@ -103,7 +103,7 @@ storefront "Sign in as Modern Mark / Legacy Luke"
 | `legacy-luke` | `HUM-20938` | `humana` | legacy marketplace (rewrite; URL stays on this domain) |
 
 Session details, the prod-hardening path, and the design rationale are in
-[lib/session.ts](lib/session.ts) and [DECISIONS.md](DECISIONS.md).
+[lib/session.ts](lib/session.ts) and [DECISIONS.md](non-essential/DECISIONS.md).
 
 Quick check:
 
@@ -187,4 +187,4 @@ Branch pushes and PRs get preview deployments.
 
 ## Decisions
 
-Architecture decisions are recorded in [DECISIONS.md](DECISIONS.md).
+Architecture decisions are recorded in [DECISIONS.md](non-essential/DECISIONS.md).

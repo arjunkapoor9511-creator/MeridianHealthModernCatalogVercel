@@ -27,7 +27,12 @@ import type { ChatUIMessage } from "@/lib/chat/types";
 
 export const maxDuration = 60;
 
-/** Emit a single plain-text assistant message and close the stream. */
+/**
+ * Emit a single plain-text assistant message and close the stream. Used for the
+ * out-of-scope deflection and the hard-failure fallback — no model call. The
+ * client can't tell it apart from a streamed reply: same UI-message SSE shape,
+ * just one hand-written text part.
+ */
 function fixedMessageResponse(text: string): Response {
   const stream = createUIMessageStream<ChatUIMessage>({
     execute: ({ writer }) => {
@@ -40,6 +45,11 @@ function fixedMessageResponse(text: string): Response {
   return createUIMessageStreamResponse({ stream });
 }
 
+/**
+ * Flatten the UI messages to `{ role, text }` for the scope classifier — drop
+ * tool parts and any turn with no text. The full messages array (tool parts and
+ * all) still goes to the agent unchanged.
+ */
 function latestTurns(messages: ChatUIMessage[]) {
   return messages
     .filter((m) => m.role === "user" || m.role === "assistant")
@@ -63,6 +73,9 @@ export async function POST(req: Request): Promise<Response> {
   }
   const messages = body.messages ?? [];
 
+  // Auth: this route is outside proxy.ts, so verify the session cookie here.
+  // `claims.insurance` (the member's cohort) scopes every tool; `claims.sub`
+  // (member id) tags the gateway call for per-user rate limiting.
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   const claims = await verifySessionToken(token);
   if (!claims) {
@@ -74,13 +87,23 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: "empty" }, { status: 400 });
   }
 
+  // Layer 1 of the scope gate: a cheap haiku classifier on the recent turns.
+  // Out of scope -> stream the fixed line and never touch the main agent.
+  // (Layer 2 is the system prompt, which repeats the rule for anything that
+  // slips through here.)
   const scope = await classifyScope(turns);
   if (scope === "out_of_scope") {
     return fixedMessageResponse(outOfScopeMessage());
   }
 
   try {
+    // System prompt inlines the member's covered catalog (name/brand/price/SKU)
+    // so the model can resolve names to SKUs and answer basic questions without
+    // a tool call.
     const system = await buildSystemPrompt(claims.insurance);
+    // `convertToModelMessages` turns the UI messages — including prior
+    // tool-showProducts parts — back into model messages, so follow-ups like
+    // "I'll take the second one" still have the earlier cards in context.
     const result = streamCatalogAgent({
       system,
       modelMessages: await convertToModelMessages(messages),
@@ -89,6 +112,9 @@ export async function POST(req: Request): Promise<Response> {
       abortSignal: req.signal,
     });
 
+    // Adapt the streamText result to a UI-message SSE stream (text + tool
+    // parts). The tool-calling loop runs server-side; each step streams to the
+    // client as it happens.
     return createUIMessageStreamResponse({
       stream: toUIMessageStream({
         stream: result.stream,

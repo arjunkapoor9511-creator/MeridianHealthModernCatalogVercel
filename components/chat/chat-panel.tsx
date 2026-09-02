@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport } from "ai";
-import { SendHorizontal } from "lucide-react";
+import { Loader2, SendHorizontal } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { ChatMessage } from "@/components/chat/chat-message";
@@ -16,22 +16,49 @@ const SUGGESTIONS = [
 ];
 
 export function ChatPanel() {
+  // `useChat` owns the message list + streaming status. Every send POSTs the
+  // whole `messages` array (text parts AND prior tool parts) to /api/chat via
+  // DefaultChatTransport; the SSE response is parsed back into typed message
+  // parts. `ChatUIMessage` carries the tool types so `tool-showProducts` etc.
+  // are type-safe where we render them (see chat-message.tsx).
   const { messages, sendMessage, status, error } = useChat<ChatUIMessage>({
     transport: new DefaultChatTransport({ api: "/api/chat" }),
   });
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // "submitted" = request sent, no tokens yet; "streaming" = tokens arriving.
+  // Either one blocks a second send and disables the composer.
   const busy = status === "submitted" || status === "streaming";
 
+  // While the request is in flight AND the assistant reply has no visible
+  // content yet (still calling tools, or thinking before the first token), show
+  // ONE "Thinking…" bubble instead of per-tool spinners. It clears the moment
+  // real content — prose or product cards — starts rendering.
+  const last = messages[messages.length - 1];
+  const assistantHasContent =
+    last?.role === "assistant" &&
+    last.parts.some(
+      (p) =>
+        (p.type === "text" && p.text.trim().length > 0) ||
+        (p.type === "tool-showProducts" &&
+          p.state === "output-available" &&
+          p.output.products.length > 0),
+    );
+  const showThinking = busy && !assistantHasContent;
+
+  // Keep the transcript pinned to the bottom as messages / tokens arrive.
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [messages, status]);
 
+  // Single entry point for both the composer form and the suggestion buttons.
   function submit(text: string) {
     const trimmed = text.trim();
     if (!trimmed || busy) return;
+    // Appends a user message locally and fires the POST; the assistant reply
+    // streams in as a new message that grows part-by-part.
     sendMessage({ text: trimmed });
     setInput("");
   }
@@ -45,6 +72,9 @@ export function ChatPanel() {
       >
         <div className="mx-auto max-w-3xl space-y-3">
           {messages.length === 0 ? (
+            // Empty state: the canned prompts double as one-tap sends. The
+            // third one is deliberately out of scope — it exercises the
+            // classifier's fixed deflection line.
             <div className="space-y-3">
               <p className="text-sm text-muted-foreground">
                 Ask about a product in your plan, or tell me what you need and
@@ -64,11 +94,20 @@ export function ChatPanel() {
               </div>
             </div>
           ) : (
+            // Each message renders its own parts (text + tool UI). Generative
+            // UI (product cards) comes out of the `tool-showProducts` parts.
             messages.map((m) => <ChatMessage key={m.id} message={m} />)
           )}
 
-          {status === "submitted" && (
-            <p className="text-xs text-muted-foreground">Thinking…</p>
+          {/* Single placeholder for the whole pre-response phase (thinking +
+              tool calls). ChatMessage renders nothing until real content lands. */}
+          {showThinking && (
+            <div className="flex justify-start">
+              <div className="flex items-center gap-1.5 rounded-lg bg-muted px-3 py-2 text-sm text-muted-foreground">
+                <Loader2 className="size-3.5 animate-spin" aria-hidden />
+                Thinking…
+              </div>
+            </div>
           )}
           {error && (
             <p className="text-xs text-destructive">

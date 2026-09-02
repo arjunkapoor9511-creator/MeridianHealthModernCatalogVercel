@@ -11,6 +11,9 @@ import { categoryLabel, formatPrice, type Product } from "@/lib/catalog";
 
 /** Compact product card rendered inside a chat message. */
 export function ChatProductCard({ product }: { product: Product }) {
+  // Same cart context as the header basket and the product grid — the chat is
+  // not a separate cart. `add` dispatches into the shared store (localStorage
+  // persisted), so the header badge updates instantly.
   const { add } = useCart();
   const [open, setOpen] = useState(false);
 
@@ -66,6 +69,9 @@ export function ChatProductCard({ product }: { product: Product }) {
           <Button
             size="xs"
             onClick={() => {
+              // Client-only: no server round-trip. Reducer merges by product.id
+              // (bumps qty if already in the basket), effect persists to
+              // localStorage.
               add(product);
               toast.success("Added to basket", { description: product.name });
             }}
