@@ -10,8 +10,10 @@
   },
   "dependencies": {
     "@ai-sdk/react": "^4.0.80",
+    "@azure/identity": "4.13.3",
     "@vercel/analytics": "^2.0.1",
     "@vercel/global-config": "^1.5.1",
+    "@vercel/oidc": "3.8.8",
     "@vercel/speed-insights": "^2.0.0",
     "@workflow/ai": "4.2.1",
     "@workflow/next": "4.1.13",
