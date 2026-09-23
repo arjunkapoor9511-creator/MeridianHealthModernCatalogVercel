@@ -25,6 +25,8 @@ import { buildSystemPrompt, streamCatalogAgent } from "@/lib/chat/agent";
 import { classifyScope, outOfScopeMessage } from "@/lib/chat/scope";
 import type { ChatUIMessage } from "@/lib/chat/types";
 
+// The tool-calling loop (search -> reason -> show) plus Sonnet's own latency can
+// outrun the platform's default budget on a slow turn; 60s gives it room.
 export const maxDuration = 60;
 
 /**
@@ -36,12 +38,17 @@ export const maxDuration = 60;
 function fixedMessageResponse(text: string): Response {
   const stream = createUIMessageStream<ChatUIMessage>({
     execute: ({ writer }) => {
+      // Hand-write the three SSE events the client expects for one text part:
+      // open the part, push the whole string as a single delta, close it. A
+      // stable id keeps it one part rather than three.
       const id = "msg-fixed";
       writer.write({ type: "text-start", id });
       writer.write({ type: "text-delta", id, delta: text });
       writer.write({ type: "text-end", id });
     },
   });
+  // Same envelope `useChat` gets from a real streamed reply, so the client
+  // renders it through the normal message path.
   return createUIMessageStreamResponse({ stream });
 }
 
@@ -52,19 +59,23 @@ function fixedMessageResponse(text: string): Response {
  */
 function latestTurns(messages: ChatUIMessage[]) {
   return messages
-    .filter((m) => m.role === "user" || m.role === "assistant")
+    .filter((m) => m.role === "user" || m.role === "assistant") // drop system/other
     .map((m) => ({
       role: m.role,
+      // Concatenate just the text parts of the turn; tool-call / tool-result
+      // parts carry no natural-language content the classifier can use.
       text: m.parts
         .filter((p): p is { type: "text"; text: string } => p.type === "text")
         .map((p) => p.text)
         .join(" ")
         .trim(),
     }))
-    .filter((m) => m.text.length > 0);
+    .filter((m) => m.text.length > 0); // e.g. an assistant turn that was tool calls only
 }
 
 export async function POST(req: Request): Promise<Response> {
+  // `useChat` POSTs `{ messages: ChatUIMessage[] }`. Guard the JSON parse so a
+  // malformed body is a clean 400, not an unhandled throw.
   let body: { messages?: ChatUIMessage[] };
   try {
     body = await req.json();
@@ -82,6 +93,8 @@ export async function POST(req: Request): Promise<Response> {
     return Response.json({ error: "unauthenticated" }, { status: 401 });
   }
 
+  // Text-only view of the conversation for the classifier. Empty means the
+  // client sent us nothing to act on (no text in any turn).
   const turns = latestTurns(messages);
   if (turns.length === 0) {
     return Response.json({ error: "empty" }, { status: 400 });
@@ -107,9 +120,9 @@ export async function POST(req: Request): Promise<Response> {
     const result = streamCatalogAgent({
       system,
       modelMessages: await convertToModelMessages(messages),
-      insurance: claims.insurance,
-      sub: claims.sub,
-      abortSignal: req.signal,
+      insurance: claims.insurance, // scopes every tool to the member's cohort
+      sub: claims.sub, // per-member gateway rate limiting / cost attribution
+      abortSignal: req.signal, // client navigates away -> abort the model call
     });
 
     // Adapt the streamText result to a UI-message SSE stream (text + tool
@@ -118,6 +131,8 @@ export async function POST(req: Request): Promise<Response> {
     return createUIMessageStreamResponse({
       stream: toUIMessageStream({
         stream: result.stream,
+        // A failure mid-stream (headers already sent) can't become an HTTP
+        // error — surface it as assistant text and log the real cause.
         onError: (error) => {
           console.error("chat stream error", error);
           return "Sorry — something went wrong. Please try again.";
@@ -125,6 +140,8 @@ export async function POST(req: Request): Promise<Response> {
       }),
     });
   } catch (error) {
+    // Threw before the first byte (prompt build, model handshake) — still safe
+    // to send a normal Response.
     console.error("chat route error", error);
     return fixedMessageResponse(
       "Sorry — the assistant is unavailable right now. Please try again shortly.",

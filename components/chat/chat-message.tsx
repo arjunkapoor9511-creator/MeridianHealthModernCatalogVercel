@@ -17,6 +17,9 @@ import type { ChatUIMessage } from "@/lib/chat/types";
 export function ChatMessage({ message }: { message: ChatUIMessage }) {
   const isUser = message.role === "user";
 
+  // Parts are ordered as the model produced them, so interleaved text and cards
+  // render in the right sequence. `i` is a safe key — parts are append-only
+  // within a message and never reordered.
   const rendered = message.parts
     .map((part, i) => {
       // Assistant prose streams in token-by-token as `part.text` grows.

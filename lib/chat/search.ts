@@ -78,10 +78,16 @@ export async function searchCatalog(query: string): Promise<SearchHit[]> {
     method: "POST",
     headers: { "content-type": "application/json", "api-key": key },
     body: JSON.stringify({
+      // BM25 keyword leg. `simple` parser — the query is a member's phrasing,
+      // not Lucene syntax.
       search: query,
       queryType: "simple",
       top: TOP,
+      // Only pull the fields we actually use — SKU to hydrate, name/statement
+      // for logging and model context.
       select: [SKU_FIELD, NAME_FIELD, STATEMENT_FIELD].join(","),
+      // Vector leg. `kind: "text"` -> the index's integrated vectorizer embeds
+      // the query server-side; Azure fuses the two legs (RRF) into one ranking.
       vectorQueries: [
         { kind: "text", text: query, fields: VECTOR_FIELD, k: VECTOR_K },
       ],
@@ -100,6 +106,8 @@ export async function searchCatalog(query: string): Promise<SearchHit[]> {
   // statement seen for each.
   const bySku = new Map<string, SearchHit>();
   for (const doc of data.value) {
+    // `data.value` is already in fused-relevance order, so the first row we see
+    // for a SKU is its best-scoring statement — keep that one, skip the rest.
     const sku = str(doc[SKU_FIELD]);
     if (!sku || bySku.has(sku)) continue;
     bySku.set(sku, {

@@ -17,6 +17,8 @@ export function ChatProductCard({ product }: { product: Product }) {
   const { add } = useCart();
   const [open, setOpen] = useState(false);
 
+  // `product` here is a full record hydrated server-side by the showProducts
+  // tool — already cohort-checked, so nothing to re-validate on the client.
   const onSale =
     product.compareAtPrice != null && product.compareAtPrice > product.price;
 

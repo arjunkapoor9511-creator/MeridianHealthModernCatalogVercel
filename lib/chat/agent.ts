@@ -36,6 +36,9 @@ export const CHAT_FALLBACK_MODEL =
  */
 async function catalogDigest(insurance: Insurance): Promise<string> {
   const products = await getProducts(insurance);
+  // One line per product, SKU last so the model has an easy anchor to quote
+  // back into getProductInfo / showProducts. Deliberately no specs here — that
+  // is what getProductInfo is for; this is just the "what exists" map.
   return products
     .map(
       (p) =>
@@ -47,6 +50,9 @@ async function catalogDigest(insurance: Insurance): Promise<string> {
 export async function buildSystemPrompt(insurance: Insurance): Promise<string> {
   const digest = await catalogDigest(insurance);
 
+  // Rebuilt per request: the digest is cohort-specific and getProducts is
+  // cached upstream, so this is cheap. Everything scope-related is stated twice
+  // over (here + the haiku classifier) on purpose — see lib/chat/scope.ts.
   return `You are the Meridian Health catalog assistant, helping a member covered by ${INSURANCE_LABELS[insurance]}.
 
 You help with THREE things, all about products in the member's catalog (below):
@@ -89,6 +95,8 @@ export interface StreamCatalogAgentOptions {
 export function streamCatalogAgent(opts: StreamCatalogAgentOptions) {
   const { system, modelMessages, insurance, sub, abortSignal } = opts;
 
+  // Returns immediately with a streaming handle; the tool-calling loop runs as
+  // the caller consumes `result.stream`. No `await` here.
   return streamText({
     // Plain "provider/model" string -> routed through the AI Gateway, no
     // provider SDK import.

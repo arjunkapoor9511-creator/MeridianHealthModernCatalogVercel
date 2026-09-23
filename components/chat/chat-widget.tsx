@@ -11,14 +11,19 @@ import { Maximize2, MessageCircle, Minimize2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
+// Code-split: the panel (and the whole AI SDK client runtime it imports) is
+// fetched only when the user first opens the widget. `ssr: false` because
+// `useChat` is browser-only and there is nothing meaningful to prerender.
 const ChatPanel = dynamic(
   () => import("@/components/chat/chat-panel").then((m) => m.ChatPanel),
   { ssr: false },
 );
 
 export function ChatWidget() {
-  const [open, setOpen] = useState(false);
-  const [expanded, setExpanded] = useState(false);
+  const [open, setOpen] = useState(false); // panel mounted? (also gates the dynamic import)
+  const [expanded, setExpanded] = useState(false); // large vs. compact box
+
+  // Launcher only — keep this subtree cheap so it never affects catalog LCP.
 
   if (!open) {
     return (

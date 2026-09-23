@@ -22,6 +22,8 @@ export function ChatPanel() {
   // parts. `ChatUIMessage` carries the tool types so `tool-showProducts` etc.
   // are type-safe where we render them (see chat-message.tsx).
   const { messages, sendMessage, status, error } = useChat<ChatUIMessage>({
+    // POSTs the whole message array to /api/chat and parses the SSE reply back
+    // into typed parts. No id/generateId config — server never persists.
     transport: new DefaultChatTransport({ api: "/api/chat" }),
   });
   const [input, setInput] = useState("");
@@ -36,6 +38,9 @@ export function ChatPanel() {
   // ONE "Thinking…" bubble instead of per-tool spinners. It clears the moment
   // real content — prose or product cards — starts rendering.
   const last = messages[messages.length - 1];
+  // "Real content" = streamed prose OR hydrated product cards. A pending/failed
+  // showProducts, or findProducts/getProductInfo parts, don't count — those are
+  // still the "thinking" phase from the member's point of view.
   const assistantHasContent =
     last?.role === "assistant" &&
     last.parts.some(

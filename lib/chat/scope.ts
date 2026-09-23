@@ -23,7 +23,11 @@ export const SCOPE_MODEL =
 
 const SUPPORT_FALLBACK = "1-800-MERIDIAN";
 
-/** The line the bot returns for anything out of scope. */
+/**
+ * The line the bot returns for anything out of scope. Single source of truth —
+ * the route streams it verbatim AND the system prompt embeds it, so the wording
+ * is identical whichever layer catches the query.
+ */
 export function outOfScopeMessage(): string {
   const contact = process.env.CHAT_SUPPORT_CONTACT?.trim() || SUPPORT_FALLBACK;
   return `I currently can't address this query, but you may be able to get support through ${contact}.`;
@@ -51,22 +55,29 @@ Classify the LAST user message, using earlier turns for context. Respond with on
 export async function classifyScope(
   messages: { role: string; text: string }[],
 ): Promise<ScopeLabel> {
+  // Last 6 turns only — enough context to judge a terse follow-up ("that one",
+  // "why?") without paying for the whole history on every turn.
   const transcript = messages
     .slice(-6)
     .map((m) => `${m.role}: ${m.text}`)
     .join("\n");
 
   try {
+    // `output: "enum"` constrains the model to exactly one SCOPE_VALUES string —
+    // no JSON parsing, no free text to sanitise.
     const { object } = await generateObject({
       model: SCOPE_MODEL,
       output: "enum",
       enum: [...SCOPE_VALUES],
       system: CLASSIFIER_PROMPT,
       prompt: transcript,
+      // Same cost tag as the main agent so both legs of a turn roll up together.
       providerOptions: { gateway: { tags: ["feature:catalog-chat"] } },
     });
     return object as ScopeLabel;
   } catch (err) {
+    // Never block a turn on the classifier. "recommendation" is the safe
+    // in-scope bucket; the system prompt still deflects anything truly off-topic.
     console.error("classifyScope failed, failing open", err);
     return "recommendation";
   }
