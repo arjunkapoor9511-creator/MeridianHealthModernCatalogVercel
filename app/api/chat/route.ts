@@ -6,8 +6,9 @@
 //      /api/product-detail).
 //   2. Classify the latest user turn (cheap model). Out of scope -> stream the
 //      fixed deflection line, no agent call.
-//   3. Otherwise run the tool-calling agent (Sonnet via AI Gateway) with the
-//      member's cohort-bound tools and stream the UI message response.
+//   3. Otherwise start the tool-calling agent (Sonnet via AI Gateway) as a
+//      Workflow SDK workflow, and stream its run back as the UI message
+//      response — see lib/chat/agent.ts for why this runs as a workflow.
 //
 // POST route handlers are never cached (Cache Components or not).
 // ---------------------------------------------------------------------------
@@ -17,12 +18,14 @@ import {
   convertToModelMessages,
   createUIMessageStream,
   createUIMessageStreamResponse,
-  toUIMessageStream,
 } from "ai";
+import { start } from "workflow/api";
 
 import { SESSION_COOKIE, verifySessionToken } from "@/lib/session";
-import { buildSystemPrompt, streamCatalogAgent } from "@/lib/chat/agent";
+import { buildSystemPrompt } from "@/lib/chat/agent";
+import { chatCatalogWorkflow } from "@/lib/chat/workflow";
 import { classifyScope, outOfScopeMessage } from "@/lib/chat/scope";
+import { getProducts } from "@/lib/products";
 import type { ChatUIMessage } from "@/lib/chat/types";
 
 // The tool-calling loop (search -> reason -> show) plus Sonnet's own latency can
@@ -110,34 +113,37 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   try {
+    // Fetched once per turn and handed to every tool call via
+    // experimental_context (see lib/chat/tools.ts) — cheap since getProducts
+    // is cached upstream, and it's also what the system prompt digest uses.
+    const catalog = await getProducts(claims.insurance);
     // System prompt inlines the member's covered catalog (name/brand/price/SKU)
     // so the model can resolve names to SKUs and answer basic questions without
     // a tool call.
-    const system = await buildSystemPrompt(claims.insurance);
+    const system = buildSystemPrompt(claims.insurance, catalog);
     // `convertToModelMessages` turns the UI messages — including prior
     // tool-showProducts parts — back into model messages, so follow-ups like
     // "I'll take the second one" still have the earlier cards in context.
-    const result = streamCatalogAgent({
-      system,
-      modelMessages: await convertToModelMessages(messages),
-      insurance: claims.insurance, // scopes every tool to the member's cohort
-      sub: claims.sub, // per-member gateway rate limiting / cost attribution
-      abortSignal: req.signal, // client navigates away -> abort the model call
-    });
+    const modelMessages = await convertToModelMessages(messages);
 
-    // Adapt the streamText result to a UI-message SSE stream (text + tool
-    // parts). The tool-calling loop runs server-side; each step streams to the
-    // client as it happens.
+    // Starts the workflow (see lib/chat/agent.ts) and returns immediately —
+    // the tool-calling loop runs as a durable run, not inline in this request.
+    const run = await start(chatCatalogWorkflow, [
+      {
+        system,
+        modelMessages,
+        sub: claims.sub, // per-member gateway rate limiting / cost attribution
+        catalog, // scopes every tool to the member's cohort
+      },
+    ]);
+
+    // The run's default stream is already UI-message-chunk shaped (DurableAgent
+    // writes to it via getWritable<UIMessageChunk>()), so it goes straight to
+    // the client — no toUIMessageStream adapter needed. The run id lets a
+    // future client reconnect to an interrupted stream (see WorkflowChatTransport).
     return createUIMessageStreamResponse({
-      stream: toUIMessageStream({
-        stream: result.stream,
-        // A failure mid-stream (headers already sent) can't become an HTTP
-        // error — surface it as assistant text and log the real cause.
-        onError: (error) => {
-          console.error("chat stream error", error);
-          return "Sorry — something went wrong. Please try again.";
-        },
-      }),
+      stream: run.readable,
+      headers: { "x-workflow-run-id": run.runId },
     });
   } catch (error) {
     // Threw before the first byte (prompt build, model handshake) — still safe

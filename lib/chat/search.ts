@@ -21,6 +21,7 @@
 // ---------------------------------------------------------------------------
 
 import "server-only";
+import { FatalError, RetryableError } from "workflow";
 
 const API_VERSION = "2026-04-01";
 /** Vector field the query embedding is compared against. */
@@ -65,7 +66,8 @@ export async function searchCatalog(query: string): Promise<SearchHit[]> {
   const index = process.env.AZURE_SEARCH_INDEX;
   const key = process.env.AZURE_SEARCH_KEY;
   if (!endpoint || !index || !key) {
-    throw new Error(
+    // Misconfiguration — retrying won't fix a missing env var.
+    throw new FatalError(
       "AZURE_SEARCH_ENDPOINT / AZURE_SEARCH_INDEX / AZURE_SEARCH_KEY are not configured",
     );
   }
@@ -95,8 +97,17 @@ export async function searchCatalog(query: string): Promise<SearchHit[]> {
   });
 
   if (!res.ok) {
-    throw new Error(
-      `Azure AI Search request failed: ${res.status} ${await res.text()}`,
+    const body = await res.text();
+    // Rate limited / transient service issue — the step should retry.
+    if (res.status === 429 || res.status >= 500) {
+      throw new RetryableError(
+        `Azure AI Search request failed: ${res.status} ${body}`,
+        res.status === 429 ? { retryAfter: "10s" } : undefined,
+      );
+    }
+    // A 4xx here means a bad request or bad credentials — retrying won't help.
+    throw new FatalError(
+      `Azure AI Search request failed: ${res.status} ${body}`,
     );
   }
 
