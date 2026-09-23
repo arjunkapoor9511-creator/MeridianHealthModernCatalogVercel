@@ -1,3 +1,4 @@
+import { withWorkflow } from "workflow/next";
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
@@ -23,4 +24,5 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Enables the "use workflow" / "use step" directives (see lib/chat/agent.ts).
+export default withWorkflow(nextConfig);

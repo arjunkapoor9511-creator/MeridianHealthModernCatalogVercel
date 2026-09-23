@@ -1,19 +1,16 @@
 // ---------------------------------------------------------------------------
-// Catalog chatbot agent
+// Catalog chatbot — system prompt
 // ---------------------------------------------------------------------------
-// Wraps `streamText` with the catalog tools, a hard-scoped system prompt, and
-// the AI Gateway options (per-user id for rate limiting, cost tags, a failover
-// model). The model routes through the gateway automatically because `model` is
-// a plain "provider/model" string.
+// Builds the hard-scoped system prompt (cohort catalog digest + tool-use
+// rules) and the model ids the workflow uses. This file is intentionally
+// step/workflow-free — see lib/chat/workflow.ts for the "use workflow"
+// entrypoint (the SDK's own guidance is to keep workflow files free of other
+// exports; mixing them is a known source of bundler bugs).
 // ---------------------------------------------------------------------------
 
 import "server-only";
 
-import { isStepCount, streamText, type ModelMessage } from "ai";
-
-import { getProducts } from "@/lib/products";
-import { INSURANCE_LABELS, formatPrice, type Insurance } from "@/lib/catalog";
-import { buildChatTools } from "@/lib/chat/tools";
+import { INSURANCE_LABELS, formatPrice, type Insurance, type Product } from "@/lib/catalog";
 import { outOfScopeMessage } from "@/lib/chat/scope";
 
 // Overridable so the models can be dropped to free-tier-eligible ones without a
@@ -34,8 +31,7 @@ export const CHAT_FALLBACK_MODEL =
  * a tool call, and know exactly what is in scope. The cohort list is small
  * (~25 items).
  */
-async function catalogDigest(insurance: Insurance): Promise<string> {
-  const products = await getProducts(insurance);
+function catalogDigest(products: Product[]): string {
   // One line per product, SKU last so the model has an easy anchor to quote
   // back into getProductInfo / showProducts. Deliberately no specs here — that
   // is what getProductInfo is for; this is just the "what exists" map.
@@ -47,8 +43,15 @@ async function catalogDigest(insurance: Insurance): Promise<string> {
     .join("\n");
 }
 
-export async function buildSystemPrompt(insurance: Insurance): Promise<string> {
-  const digest = await catalogDigest(insurance);
+/**
+ * `products` is the same cohort-scoped catalog the caller prefetches once per
+ * turn (see `StreamCatalogAgentOptions.catalog` in lib/chat/workflow.ts and
+ * app/api/chat/route.ts) — passed in rather than fetched here so this stays a
+ * plain, synchronous, step-free function callable from the Node.js route
+ * handler.
+ */
+export function buildSystemPrompt(insurance: Insurance, products: Product[]): string {
+  const digest = catalogDigest(products);
 
   // Rebuilt per request: the digest is cohort-specific and getProducts is
   // cached upstream, so this is cheap. Everything scope-related is stated twice
@@ -81,45 +84,4 @@ Text length: the cards already show each product's name, price and key specs. Af
 
 The member's covered catalog:
 ${digest}`;
-}
-
-export interface StreamCatalogAgentOptions {
-  system: string;
-  modelMessages: ModelMessage[];
-  insurance: Insurance;
-  /** Verified member id — used for gateway per-user rate limiting / tracking. */
-  sub: string;
-  abortSignal?: AbortSignal;
-}
-
-export function streamCatalogAgent(opts: StreamCatalogAgentOptions) {
-  const { system, modelMessages, insurance, sub, abortSignal } = opts;
-
-  // Returns immediately with a streaming handle; the tool-calling loop runs as
-  // the caller consumes `result.stream`. No `await` here.
-  return streamText({
-    // Plain "provider/model" string -> routed through the AI Gateway, no
-    // provider SDK import.
-    model: CHAT_MODEL,
-    system,
-    messages: modelMessages,
-    // Cohort-bound: every SKU is checked against getProducts(insurance) inside
-    // the tool before it can reach the model or the UI.
-    tools: buildChatTools(insurance),
-    // Cap the tool-calling loop (findProducts -> showProducts is 2 steps;
-    // a question that also shows a card is 2; 6 leaves headroom without looping).
-    stopWhen: isStepCount(6),
-    // Client disconnect / navigation aborts the model call (req.signal).
-    abortSignal,
-    providerOptions: {
-      gateway: {
-        user: sub, // per-member rate limiting + cost attribution
-        tags: [
-          "feature:catalog-chat",
-          `env:${process.env.VERCEL_ENV ?? "development"}`,
-        ],
-        models: [CHAT_FALLBACK_MODEL], // failover if the primary is unavailable
-      },
-    },
-  });
 }

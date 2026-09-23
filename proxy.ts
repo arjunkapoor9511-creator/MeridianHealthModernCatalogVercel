@@ -28,7 +28,11 @@ export const config = {
   //   - /api/*          (so /api/demo-login is reachable without a session)
   //   - /_next/static/* , /_next/image/*  (build assets)
   //   - /favicon.ico
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  //   - /.well-known/workflow/*  (Workflow SDK's internal queue/resume calls —
+  //     intercepting these breaks workflow execution; see lib/chat/agent.ts)
+  matcher: [
+    "/((?!api|_next/static|_next/image|favicon.ico|.well-known/workflow/).*)",
+  ],
 };
 
 // Fallbacks so a missing env var can't crash the proxy or cause a redirect loop.
