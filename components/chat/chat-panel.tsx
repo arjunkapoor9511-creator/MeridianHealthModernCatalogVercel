@@ -11,7 +11,7 @@ import type { ChatUIMessage } from "@/lib/chat/types";
 
 const SUGGESTIONS = [
   "How far can the Aspire Elio go on one charge?",
-  "I'm 80kg and my front door is 0.6m wide — give me a foldable scooter under $3k with at least 20km range",
+  "I'm 80kg and my front door is 0.6m wide, give me a foldable scooter under $3k with at least 20km range",
   "What medications are covered under my insurance plan?",
 ];
 
